@@ -144,10 +144,8 @@ public class PhysicalFileSystemBackend : IFileSystemBackend
                 throw new IOException($"File '{path}' is in use by another process and cannot be deleted.");
             }
         }
-        else
-        {
-            File.Delete(physicalPath);
-        }
+
+        File.Delete(physicalPath);
     }
 
     public void MoveFile(VPath sourcePath, VPath destinationPath)
