@@ -9,8 +9,7 @@ public class Program
         string path = AppDomain.CurrentDomain.BaseDirectory;
         PhysicalFileSystemBackend backend = new(path);
 
-        List<DokiFS.Interfaces.IVfsEntry> dirs = [.. backend.ListDirectory("/")];
-
-        dirs.ForEach(Console.WriteLine);
+        bool success = backend.TryGetPhysicalPath("/DokiFS.dll", out string ppath);
+        Console.WriteLine(ppath);
     }
 }

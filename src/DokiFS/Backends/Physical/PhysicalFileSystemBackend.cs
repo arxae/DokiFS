@@ -4,11 +4,13 @@ using DokiFS.Interfaces;
 
 namespace DokiFS.Backends.Physical;
 
-public class PhysicalFileSystemBackend : IFileSystemBackend
+public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvider
 {
-    public BackendProperties BackendProperties => BackendProperties.Default;
+    public BackendProperties BackendProperties => BackendProperties.PhysicalPaths;
 
     public string BackendRoot { get; private set; }
+
+    public string RootPhysicalPath => BackendRoot;
 
     public PhysicalFileSystemBackend(string physicalPath)
     {
@@ -41,14 +43,14 @@ public class PhysicalFileSystemBackend : IFileSystemBackend
     // --- File/Folder queries
     public bool Exists(VPath path)
     {
-        string physicalPath = GetPhysicalPath(BackendRoot, path);
+        TryGetPhysicalPath(path, out string physicalPath);
 
         return File.Exists(physicalPath) || Directory.Exists(physicalPath);
     }
 
     public IVfsEntry GetInfo(VPath path)
     {
-        string physicalPath = GetPhysicalPath(BackendRoot, path);
+        TryGetPhysicalPath(path, out string physicalPath);
 
         if (File.Exists(physicalPath))
         {
@@ -66,7 +68,7 @@ public class PhysicalFileSystemBackend : IFileSystemBackend
 
     public IEnumerable<IVfsEntry> ListDirectory(VPath path)
     {
-        string physicalPath = GetPhysicalPath(BackendRoot, path);
+        TryGetPhysicalPath(path, out string physicalPath);
 
         if (Directory.Exists(physicalPath) == false)
         {
@@ -92,7 +94,7 @@ public class PhysicalFileSystemBackend : IFileSystemBackend
     // --- File operations
     public void CreateFile(VPath path, long size = 0)
     {
-        string physicalPath = GetPhysicalPath(BackendRoot, path);
+        string physicalPath = GetPhysicalPath(path);
 
         if (Directory.Exists(physicalPath))
         {
@@ -122,7 +124,7 @@ public class PhysicalFileSystemBackend : IFileSystemBackend
 
     public void DeleteFile(VPath path)
     {
-        string physicalPath = GetPhysicalPath(BackendRoot, path);
+        TryGetPhysicalPath(path, out string physicalPath);
 
         if (Directory.Exists(physicalPath))
         {
@@ -153,8 +155,12 @@ public class PhysicalFileSystemBackend : IFileSystemBackend
 
     public void MoveFile(VPath sourcePath, VPath destinationPath, bool overwrite)
     {
-        string source = GetPhysicalPath(BackendRoot, sourcePath);
-        string destination = GetPhysicalPath(BackendRoot, destinationPath);
+        if (TryGetPhysicalPath(sourcePath, out string source) == false)
+        {
+            throw new FileNotFoundException($"Source file not found: '{sourcePath}'");
+        }
+
+        string destination = GetPhysicalPath(destinationPath);
 
         // Check if source is a directory
         if (Directory.Exists(source))
@@ -178,8 +184,8 @@ public class PhysicalFileSystemBackend : IFileSystemBackend
 
     public void CopyFile(VPath sourcePath, VPath destinationPath, bool overwrite)
     {
-        string source = GetPhysicalPath(BackendRoot, sourcePath);
-        string destination = GetPhysicalPath(BackendRoot, destinationPath);
+        TryGetPhysicalPath(sourcePath, out string source);
+        string destination = GetPhysicalPath(destinationPath);
 
         // Check if source is a directory
         if (Directory.Exists(source))
@@ -199,7 +205,11 @@ public class PhysicalFileSystemBackend : IFileSystemBackend
 
     public Stream OpenRead(VPath path)
     {
-        string physicalPath = GetPhysicalPath(BackendRoot, path);
+        if (TryGetPhysicalPath(path, out string physicalPath) == false)
+        {
+            throw new FileNotFoundException($"File not found: '{path}'");
+        }
+
         try
         {
             return File.OpenRead(physicalPath);
@@ -220,7 +230,21 @@ public class PhysicalFileSystemBackend : IFileSystemBackend
 
     public Stream OpenWrite(VPath path, FileMode mode, FileAccess access, FileShare share)
     {
-        string physicalPath = GetPhysicalPath(BackendRoot, path);
+        string physicalPath;
+
+        // If it's an "open" mode, the file should exist
+        if (mode is FileMode.Open or FileMode.Append or FileMode.Truncate)
+        {
+            if (TryGetPhysicalPath(path, out physicalPath) == false)
+            {
+                throw new FileNotFoundException($"File not found: '{path}'");
+            }
+        }
+        else
+        {
+            physicalPath = GetPhysicalPath(path);
+        }
+
         string parentDirectory = Path.GetDirectoryName(physicalPath);
 
         Directory.CreateDirectory(parentDirectory);
@@ -231,7 +255,7 @@ public class PhysicalFileSystemBackend : IFileSystemBackend
     // --- Directory operations
     public void CreateDirectory(VPath path)
     {
-        string physicalPath = GetPhysicalPath(BackendRoot, path);
+        string physicalPath = GetPhysicalPath(path);
         Directory.CreateDirectory(physicalPath);
     }
 
@@ -240,21 +264,22 @@ public class PhysicalFileSystemBackend : IFileSystemBackend
 
     public void DeleteDirectory(VPath path, bool recursive)
     {
-        string physicalPath = GetPhysicalPath(BackendRoot, path);
+        TryGetPhysicalPath(path, out string physicalPath);
         Directory.Delete(physicalPath, recursive);
     }
 
     public void MoveDirectory(VPath sourcePath, VPath destinationPath)
     {
-        string source = GetPhysicalPath(BackendRoot, sourcePath);
-        string destination = GetPhysicalPath(BackendRoot, destinationPath);
+        TryGetPhysicalPath(sourcePath, out string source);
+        string destination = GetPhysicalPath(destinationPath);
+
         Directory.Move(source, destination);
     }
 
     public void CopyDirectory(VPath sourcePath, VPath destinationPath)
     {
-        string source = GetPhysicalPath(BackendRoot, sourcePath);
-        string destination = GetPhysicalPath(BackendRoot, destinationPath);
+        TryGetPhysicalPath(sourcePath, out string source);
+        string destination = GetPhysicalPath(destinationPath);
 
         DirectoryInfo dir = new(source);
 
@@ -280,18 +305,9 @@ public class PhysicalFileSystemBackend : IFileSystemBackend
         }
     }
 
-
-
-
-
-
-
-    string GetPhysicalPath(string backendRootPath, VPath path)
+    public bool TryGetPhysicalPath(VPath path, out string physicalPath)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(backendRootPath, nameof(backendRootPath));
-
-        string physicalPath;
-
+        // Trim the leading / from the virtual path
         if (path.IsAbsolute)
         {
             path = path.FullPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -299,7 +315,7 @@ public class PhysicalFileSystemBackend : IFileSystemBackend
 
         try
         {
-            physicalPath = Path.GetFullPath(Path.Combine(backendRootPath, (string)path));
+            physicalPath = Path.GetFullPath(Path.Combine(BackendRoot, (string)path));
         }
         catch (ArgumentException ex)
         {
@@ -307,11 +323,28 @@ public class PhysicalFileSystemBackend : IFileSystemBackend
         }
 
         // Verify that the path is actually part of the backend.
-        if (physicalPath.StartsWith(backendRootPath, StringComparison.OrdinalIgnoreCase) == false)
+        if (physicalPath.StartsWith(BackendRoot, StringComparison.OrdinalIgnoreCase) == false)
         {
-            throw new UnauthorizedAccessException($"Resolved path '{physicalPath}' is outside the backend root '{backendRootPath}'.");
+            throw new UnauthorizedAccessException($"Resolved path '{physicalPath}' is outside the backend root '{BackendRoot}'.");
         }
 
-        return physicalPath;
+        if (File.Exists(physicalPath) || Directory.Exists(physicalPath))
+        {
+            return true;
+        }
+
+        physicalPath = null;
+        return false;
+    }
+
+    // Gets the physical path to a file, even if it doesn't exist
+    string GetPhysicalPath(VPath path)
+    {
+        if (path.IsAbsolute)
+        {
+            path = path.FullPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        return Path.Combine(BackendRoot, (string)path);
     }
 }

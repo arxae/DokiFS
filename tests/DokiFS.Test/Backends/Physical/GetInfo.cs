@@ -17,6 +17,7 @@ public class PhysicalFileSystemBackendGetInfoTests : IDisposable
         util.Dispose();
         GC.SuppressFinalize(this);
     }
+
     [Fact(DisplayName = "GetInfo: Basic get info for existing file")]
     public void GetInfoBasicGetInfoForExistingFile()
     {

@@ -15,7 +15,7 @@ public class PhysicalBackendTestUtilities : IDisposable
             .Replace("PhysicalFileSystemBackendOpenReadTests", string.Empty)
             .Replace("Tests", string.Empty);
 
-        BackendRoot = Path.Combine(Path.GetTempPath(), "DokiFSTest_" + Guid.NewGuid().ToString());
+        BackendRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DokiFSTest_" + Guid.NewGuid().ToString());
         _ = Directory.CreateDirectory(BackendRoot);
         Debug.WriteLine($"{testName} temp path: " + BackendRoot);
     }
@@ -87,6 +87,8 @@ public class PhysicalBackendTestUtilities : IDisposable
         path = Path.Combine(BackendRoot, path);
         return File.ReadAllText(path);
     }
+
+    public string GetFullPath(string path) => Path.Combine(BackendRoot, path);
 
     public void Dispose()
     {
