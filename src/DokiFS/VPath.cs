@@ -5,7 +5,7 @@ namespace DokiFS;
 /// When requiring a path that falls outside the VFS, use a string
 /// </summary>
 /// <param name="path"></param>
-public readonly struct VPath(string path) : IEquatable<VPath>
+public readonly struct VPath : IEquatable<VPath>
 {
     public static readonly VPath Empty = new(string.Empty);
     public static readonly VPath Root = new("/");
@@ -14,12 +14,17 @@ public readonly struct VPath(string path) : IEquatable<VPath>
     public const string DirectorySeparatorString = "/";
     public const StringComparison PathComparison = StringComparison.Ordinal;
 
-    public string FullPath { get; } = string.IsNullOrEmpty(path) ? string.Empty : Normalize(path);
+    public string FullPath { get; }
 
     public bool IsNull => FullPath is null;
     public bool IsEmpty => FullPath is { Length: 0 };
     public bool IsAbsolute => FullPath is { Length: > 0 } && FullPath[0] == DirectorySeparator;
     public bool IsRoot => FullPath?.Length == 1 && FullPath[0] == DirectorySeparator;
+
+    public VPath(string path)
+    {
+        FullPath = Normalize(path);
+    }
 
     static string Normalize(string path)
     {
@@ -110,9 +115,7 @@ public readonly struct VPath(string path) : IEquatable<VPath>
         if (path.IsNull || path.IsEmpty) return true;
         if (IsNull || IsEmpty) return false;
 
-        return FullPath.StartsWith(path.FullPath, PathComparison) &&
-                (FullPath.Length == path.FullPath.Length ||
-                (FullPath.Length > path.FullPath.Length && FullPath[path.FullPath.Length] == DirectorySeparator));
+        return FullPath.StartsWith(path.FullPath, PathComparison);
     }
 
     public VPath GetDirectory()
@@ -134,11 +137,25 @@ public readonly struct VPath(string path) : IEquatable<VPath>
     {
         if (IsNull || IsEmpty) return string.Empty;
 
+        if (IsRoot)
+        {
+            return "/";
+        }
+
         int lastIndex = FullPath.LastIndexOf(DirectorySeparator);
         if (lastIndex < 0) return FullPath;
         if (lastIndex == FullPath.Length - 1) return string.Empty;
 
         return FullPath[(lastIndex + 1)..];
+    }
+
+    // TODO: Optimize with spans
+    public string[] Split()
+    {
+        if (IsNull || IsEmpty || IsRoot) return [];
+
+        return FullPath
+            .Split(DirectorySeparatorString, StringSplitOptions.RemoveEmptyEntries);
     }
 
     public override string ToString() => FullPath;

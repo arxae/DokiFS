@@ -102,6 +102,7 @@ csharp_prefer_static_local_function = true:warning
 # .NET Unnecessary code rules
 dotnet_code_quality_unused_parameters = all:warning
 dotnet_remove_unnecessary_suppression_exclusions = none:warning
+csharp_style_prefer_primary_constructors = true:suggestion
 
 # C# Unnecessary code rules
 csharp_style_unused_value_expression_statement_preference = discard_variable:suggestion
@@ -182,15 +183,17 @@ dotnet_diagnostic.IDE0046.severity = suggestion # IDE0046: Use conditional expre
 dotnet_diagnostic.IDE0058.severity = suggestion # IDE0058: Remove unnecessary expression value
 dotnet_diagnostic.IDE0059.severity = suggestion # IDE0059: Remove unnecessary value assignment
 dotnet_diagnostic.IDE0063.severity = suggestion # IDE0063: Use simple 'using' statement
-dotnet_diagnostic.IDE0100.severity = none # IDE0100: Remove unnecessary equality operator
+dotnet_diagnostic.IDE0100.severity = none       # IDE0100: Remove unnecessary equality operator
 dotnet_diagnostic.IDE0130.severity = suggestion # IDE0130: Namespace does not match folder structure
-dotnet_diagnostic.IDE0161.severity = none # IDE0160: Namespace declaration preferences
-dotnet_diagnostic.IDE1006.severity = warning # IDE1006: Naming Styles
+dotnet_diagnostic.IDE0161.severity = none       # IDE0160: Namespace declaration preferences
+dotnet_diagnostic.IDE0290.severity = suggestion # IDE0290: Use primary constructor
+dotnet_diagnostic.IDE1006.severity = warning    # IDE1006: Naming Styles
 
 # Code Analysis
-dotnet_diagnostic.CA1305.severity = none
-dotnet_diagnostic.CA1707.severity = warning # CA1707: Identifiers should not contain underscores
-dotnet_diagnostic.CA1725.severity = warning # CA1725: Parameter names should match base declaration
-dotnet_diagnostic.CA1805.severity = error # CA1805: Do not initialize unnecessarily.
-dotnet_diagnostic.CA1822.severity = none # Mark members as static
-dotnet_diagnostic.CA1848.severity = suggestion # CA1848: Use the LoggerMessage delegates
+dotnet_diagnostic.CA1305.severity = none        # CA1305: Specify IFormatProvider
+dotnet_diagnostic.CA1707.severity = warning     # CA1707: Identifiers should not contain underscores
+dotnet_diagnostic.CA1725.severity = warning     # CA1725: Parameter names should match base declaration
+dotnet_diagnostic.CA1805.severity = error       # CA1805: Do not initialize unnecessarily.
+dotnet_diagnostic.CA1822.severity = none        # CA1822: Mark members as static
+dotnet_diagnostic.CA1848.severity = suggestion  # CA1848: Use the LoggerMessage delegates
+

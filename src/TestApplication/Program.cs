@@ -1,4 +1,4 @@
-﻿using DokiFS.Backends.Physical;
+﻿using DokiFS.Backends.Memory;
 
 namespace Test;
 
@@ -6,10 +6,15 @@ public class Program
 {
     public static void Main()
     {
-        string path = AppDomain.CurrentDomain.BaseDirectory;
-        PhysicalFileSystemBackend backend = new(path);
+        MemoryFileSystemBackend backend = new();
 
-        bool success = backend.TryGetPhysicalPath("/DokiFS.dll", out string ppath);
-        Console.WriteLine(ppath);
+        backend.CreateDirectory("/test");
+        backend.CreateFile("/test/test.txt");
+
+        backend.DeleteDirectory("/test", true);
+
+        backend.ListDirectory("/")
+            .ToList()
+            .ForEach(Console.WriteLine);
     }
 }

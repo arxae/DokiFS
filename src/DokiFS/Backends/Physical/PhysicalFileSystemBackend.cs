@@ -240,6 +240,8 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
                 throw new FileNotFoundException($"File not found: '{path}'");
             }
         }
+        // Otherwise, just get the path to it. Opening a filestream
+        // will create it
         else
         {
             physicalPath = GetPhysicalPath(path);

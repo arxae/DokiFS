@@ -11,8 +11,9 @@ public interface IVfsEntry
     Type FromBackend { get; }
     string Description { get; }
 
-    Stream OpenRead(VPath path);
-    Stream OpenWrite(VPath path, FileMode mode = FileMode.OpenOrCreate, FileAccess access = FileAccess.ReadWrite);
+    Stream OpenRead();
+    Stream OpenWrite(FileMode mode = FileMode.OpenOrCreate, FileAccess access = FileAccess.ReadWrite, FileShare share = FileShare.Read);
+
 }
 
 public enum VfsEntryType

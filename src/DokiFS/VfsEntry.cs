@@ -28,7 +28,7 @@ public class VfsEntry : IVfsEntry
     /// <summary>
     /// The size of the file in bytes. For directories, this is typically 0.
     /// </summary>
-    public long Size { get; set; }
+    public virtual long Size { get; set; }
 
     /// <summary>
     /// The last write time of the file or directory.
@@ -49,10 +49,6 @@ public class VfsEntry : IVfsEntry
     /// Initializes a new instance of the <see cref="VfsEntry"/> class.
     /// </summary>
     public VfsEntry() { }
-
-    public override string ToString()
-        => $"{FileName} ({(EntryType == VfsEntryType.Directory ? "Directory" : "File")}) - {Size} bytes, Backend: {FromBackend?.FullName ?? "Unknown"}, Description: {Description ?? "N/A"}";
-
 
     /// <summary>
     /// Initializes a new instance of the <see cref="VfsEntry"/> class.
@@ -173,9 +169,12 @@ public class VfsEntry : IVfsEntry
         return true; // Default to true if we can't determine to be on the safe side
     }
 
-    public Stream OpenRead(VPath path)
+    public virtual Stream OpenRead()
         => throw new NotImplementedException();
 
-    public Stream OpenWrite(VPath path, FileMode mode = FileMode.OpenOrCreate, FileAccess access = FileAccess.ReadWrite)
+    public virtual Stream OpenWrite(FileMode mode = FileMode.OpenOrCreate, FileAccess access = FileAccess.ReadWrite, FileShare share = FileShare.Read)
         => throw new NotImplementedException();
+
+    public override string ToString()
+        => $"{FileName} ({(EntryType == VfsEntryType.Directory ? "Directory" : "File")}) - {Size} bytes, Backend: {FromBackend?.FullName ?? "Unknown"}, Description: {Description ?? "N/A"}";
 }
