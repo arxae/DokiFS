@@ -62,8 +62,7 @@ public class VirtualFileSystem : IVirtualFileSystem
             // Check if there actually is something mounted at the mount point
             if (mounts.TryGetValue(mountPoint, out IFileSystemBackend backend) == false)
             {
-                // TODO: Specific exception
-                throw new VfsException($"There is already a backend present at mount point {mountPoint}");
+                throw new MountPointConflictException(mountPoint, $"There is already a backend present at mount point {mountPoint}");
             }
 
             // Check with the backend if it's ready to be unmounted
@@ -80,8 +79,7 @@ public class VirtualFileSystem : IVirtualFileSystem
                 KeyValuePair<VPath, IFileSystemBackend> mnt = mounts.FirstOrDefault(m => m.Key == mountPoint);
                 if (mounts.TryRemove(mnt) == false)
                 {
-                    // TODO: Specific exception
-                    throw new VfsException();
+                    throw new VfsException("Unable to remove mount due to unspecified error");
                 }
             }
         }
