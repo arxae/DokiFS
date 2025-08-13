@@ -46,4 +46,15 @@ public class PhysicalFileSystemBackendDeleteFileTests : IDisposable
 
         _ = Assert.Throws<FileNotFoundException>(() => backend.DeleteFile(path));
     }
+
+    [Fact(DisplayName = "DeleteFile: Delete folder throws exception")]
+    public void TryingToDeleteDirectoryThrowsException()
+    {
+        PhysicalFileSystemBackend backend = new(util.BackendRoot);
+
+        string path = "/test";
+        util.CreateTempDirectory("test");
+
+        _ = Assert.Throws<IOException>(() => backend.DeleteFile(path));
+    }
 }

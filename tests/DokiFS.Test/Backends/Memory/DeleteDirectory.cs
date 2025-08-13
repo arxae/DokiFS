@@ -19,7 +19,6 @@ public class MemoryFileSystemBackendDeleteDirectoryTests
         Assert.False(backend.Exists(path));
     }
 
-    // TODO: Check thrown exception. Seems that on windows it's an IOException and on mac a DirectoryNotFoundException
     [Fact(DisplayName = "DeleteDirectory: Throws exception on path to file")]
     public void ShouldThrowExceptionOnFilePath()
     {

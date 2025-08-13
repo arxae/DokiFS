@@ -270,6 +270,14 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
     public void DeleteDirectory(VPath path, bool recursive)
     {
         TryGetPhysicalPath(path, out string physicalPath);
+
+        // On mac, Directory.Delete throws a DirectoryNotFoundException instead of an IOException.
+        // Check here to make sure the exceptions are the same across platforms
+        if (GetInfo(path).EntryType == VfsEntryType.File)
+        {
+            throw new IOException($"Path points to a file: '{path}'");
+        }
+
         Directory.Delete(physicalPath, recursive);
     }
 
