@@ -40,6 +40,9 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
         BackendRoot = physicalPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
     }
 
+    public MountResult OnMount(VPath mountPoint) => MountResult.Accepted;
+    public UnmountResult OnUnmount() => UnmountResult.Accepted;
+
     // --- File/Folder queries
     public bool Exists(VPath path)
     {

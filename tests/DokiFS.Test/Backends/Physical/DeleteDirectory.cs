@@ -33,6 +33,7 @@ public class PhysicalFileSystemBackendDeleteDirectoryTests : IDisposable
     }
 
     // TODO: Check thrown exception. Seems that on windows it's an IOException and on mac a DirectoryNotFoundException
+    // Should be ioexception, check on mac later
     [Fact(DisplayName = "DeleteDirectory: Throws exception on path to file")]
     public void ShouldThrowExceptionOnFilePath()
     {
@@ -43,6 +44,6 @@ public class PhysicalFileSystemBackendDeleteDirectoryTests : IDisposable
 
         util.CreateTempFile(dir);
 
-        Assert.Throws<DirectoryNotFoundException>(() => backend.DeleteDirectory(path));
+        Assert.Throws<IOException>(() => backend.DeleteDirectory(path));
     }
 }

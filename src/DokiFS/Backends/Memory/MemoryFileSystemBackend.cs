@@ -15,6 +15,9 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
         root = new();
     }
 
+    public MountResult OnMount(VPath mountPoint) => MountResult.Accepted;
+    public UnmountResult OnUnmount() => UnmountResult.Accepted;
+
     // Queries
     public bool Exists(VPath path) => TryGetNode(path, out MemoryNode _);
 
@@ -195,7 +198,7 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
             throw new FileNotFoundException($"Path not found within backend: '{path}'");
         }
 
-        if(node.EntryType == VfsEntryType.Directory)
+        if (node.EntryType == VfsEntryType.Directory)
         {
             throw new IOException($"Cannot open a directory as a file: '{path}'");
         }
