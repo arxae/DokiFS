@@ -1,7 +1,7 @@
 using DokiFS.Interfaces;
 using FakeItEasy;
 
-namespace DokiFS.Tests.VirtualFileSystems.Default;
+namespace DokiFS.Tests.VirtualFileSystems.DefaultVfs;
 
 public class DefaultVfsIsMountedTests
 {

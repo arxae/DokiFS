@@ -19,14 +19,14 @@ public class MemoryDirectoryNode : MemoryNode, IDisposable
         child.Parent = this;
 
         // Recalculate the path for the child
-        child.FullPath = FullPath.Combine(child.FullPath);
+        child.FullPath = FullPath.Append(child.FullPath);
 
         // if the child has any children and is a folder, recalculate that path as well
         if (child is MemoryDirectoryNode dirNode)
         {
             foreach (MemoryNode grandchild in dirNode.Children)
             {
-                grandchild.FullPath = dirNode.FullPath.Combine(grandchild.FullPath.GetFileName());
+                grandchild.FullPath = dirNode.FullPath.Append(grandchild.FullPath.GetLeaf());
             }
         }
 

@@ -16,7 +16,7 @@ public class MemoryFileSystemBackendGetInfoTests
         IVfsEntry fileInfo = backend.GetInfo(file);
 
         Assert.NotNull(fileInfo);
-        Assert.Equal(file.GetFileName(), fileInfo.FileName);
+        Assert.Equal(file.GetLeaf(), fileInfo.FileName);
         Assert.Equal(file, fileInfo.FullPath);
         Assert.Equal(VfsEntryType.File, fileInfo.EntryType);
         Assert.NotEqual(VfsEntryProperties.Readonly, fileInfo.Properties);

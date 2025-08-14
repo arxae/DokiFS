@@ -8,7 +8,7 @@ public class VfsEntry : IVfsEntry
     /// <summary>
     /// The name of the file or directory.
     /// </summary>
-    public string FileName => FullPath.GetFileName();
+    public string FileName => FullPath.GetLeaf();
 
     /// <summary>
     /// The full path of the file or directory within the virtual file system.

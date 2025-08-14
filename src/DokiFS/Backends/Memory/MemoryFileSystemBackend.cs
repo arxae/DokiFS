@@ -62,7 +62,7 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
 
         if (TryGetNode(path, out MemoryNode _) == false)
         {
-            MemoryFileNode fileNode = new(path.GetFileName())
+            MemoryFileNode fileNode = new(path.GetLeaf())
             {
                 LastWriteTime = DateTime.UtcNow
             };
@@ -252,7 +252,7 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
         MemoryDirectoryNode parent = root;
         for (int i = 0; i < segments.Length; i++)
         {
-            currentPath = currentPath.Combine(segments[i]);
+            currentPath = currentPath.Append(segments[i]);
 
             // Try to get next node
             if (TryGetNode(currentPath, out MemoryNode node))
@@ -399,7 +399,7 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
         // Recursively copy all children
         foreach (MemoryNode child in sourceDir.Children)
         {
-            VPath childDestPath = destinationPath.Combine(child.FullPath.GetFileName());
+            VPath childDestPath = destinationPath.Append(child.FullPath.GetLeaf());
 
             if (child is MemoryFileNode fileNode)
             {
@@ -425,7 +425,7 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
             return true;
         }
 
-        if (path.IsEmpty || path.IsNull)
+        if (path.IsEmpty)
         {
             node = null;
             return false;
@@ -445,14 +445,14 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
             if (i == segments.Length - 1)
             {
                 // First try to find a file with this name
-                if (currentNode.Children.FirstOrDefault(c => c.FullPath.GetFileName() == segment) is MemoryFileNode fileNode)
+                if (currentNode.Children.FirstOrDefault(c => c.FullPath.GetLeaf() == segment) is MemoryFileNode fileNode)
                 {
                     node = fileNode;
                     return true;
                 }
 
                 // Then try to find a directory with this name
-                if (currentNode.Children.FirstOrDefault(c => c.FullPath.GetFileName() == segment && c is MemoryDirectoryNode) is MemoryDirectoryNode dirNode)
+                if (currentNode.Children.FirstOrDefault(c => c.FullPath.GetLeaf() == segment && c is MemoryDirectoryNode) is MemoryDirectoryNode dirNode)
                 {
                     node = dirNode;
                     return true;
@@ -465,10 +465,10 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
             else
             {
                 // Traverse directories
-                if (currentNode.Children.FirstOrDefault(c => c.FullPath.GetFileName() == segment && c is MemoryDirectoryNode) is MemoryDirectoryNode nextDir)
+                if (currentNode.Children.FirstOrDefault(c => c.FullPath.GetLeaf() == segment && c is MemoryDirectoryNode) is MemoryDirectoryNode nextDir)
                 {
                     currentNode = nextDir;
-                    currentPath = currentPath.Combine(segment);
+                    currentPath = currentPath.Append(segment);
                 }
                 else
                 {
@@ -489,7 +489,7 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
             // Calculate the relative path from the old base path
             string relativePath = child.FullPath.ToString()[oldBasePath.ToString().Length..];
             // Create the new path by combining the new base path with the relative path
-            VPath newPath = newBasePath.Combine(relativePath.TrimStart('/'));
+            VPath newPath = newBasePath.Append(relativePath.TrimStart('/'));
             child.FullPath = newPath;
 
             // Recursively update children of directories

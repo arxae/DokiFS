@@ -15,9 +15,9 @@ public readonly struct VPath : IEquatable<VPath>
     public const StringComparison PathComparison = StringComparison.Ordinal;
 
     public string FullPath { get; }
+    public int Length => FullPath.Length;
 
-    public bool IsNull => FullPath is null;
-    public bool IsEmpty => FullPath is { Length: 0 };
+    public bool IsEmpty => FullPath is { Length: 0 } or null;
     public bool IsAbsolute => FullPath is { Length: > 0 } && FullPath[0] == DirectorySeparator;
     public bool IsRoot => FullPath?.Length == 1 && FullPath[0] == DirectorySeparator;
 
@@ -26,7 +26,12 @@ public readonly struct VPath : IEquatable<VPath>
         FullPath = Normalize(path);
     }
 
-    static string Normalize(string path)
+    /// <summary>
+    /// Normalizes the given path by converting backslashes to forward slashes and removing duplicate slashes.
+    /// </summary>
+    /// <param name="path"></param>
+    /// <returns>The normalizes path</returns>
+    public static string Normalize(string path)
     {
         if (string.IsNullOrEmpty(path)) return string.Empty;
 
@@ -34,13 +39,21 @@ public readonly struct VPath : IEquatable<VPath>
         bool needsNormalization = false;
         ReadOnlySpan<char> span = path.AsSpan();
 
-        for (int i = 0; i < length; i++)
+        // Check if there's a trailing separator (unless it's the root path)
+        if (length > 1 && span[length - 1] == DirectorySeparator)
         {
-            char c = span[i];
-            if (c == '\\' || (c == DirectorySeparator && i < length - 1 && span[i + 1] == DirectorySeparator))
+            needsNormalization = true;
+        }
+        else
+        {
+            for (int i = 0; i < length; i++)
             {
-                needsNormalization = true;
-                break;
+                char c = span[i];
+                if (c == '\\' || (c == DirectorySeparator && i < length - 1 && span[i + 1] == DirectorySeparator))
+                {
+                    needsNormalization = true;
+                    break;
+                }
             }
         }
 
@@ -65,6 +78,9 @@ public readonly struct VPath : IEquatable<VPath>
             // Skip duplicate separators
             if (c == DirectorySeparator && lastWasSeparator) continue;
 
+            // Don't add trailing separator unless it's the root path
+            if (c == DirectorySeparator && i == span.Length - 1 && i > 0) continue;
+
             lastWasSeparator = c == DirectorySeparator;
             sb.Append(c);
         }
@@ -72,14 +88,17 @@ public readonly struct VPath : IEquatable<VPath>
         return sb.ToString();
     }
 
-    public VPath Combine(VPath path)
+    /// <summary>
+    /// Appends a path to the current one and return the combined path
+    /// </summary>
+    /// <param name="path">The path to append to the current one</param>
+    /// <returns>A new VPath instance representing the combined path</returns>
+    public VPath Append(VPath path)
     {
-        // Single-check optimizations
         if (path.IsAbsolute) return path;
 
-        // Empty checks combined
-        if (path.IsNull || path.IsEmpty) return this;
-        if (IsNull || IsEmpty) return path;
+        if (path.IsEmpty) return this;
+        if (IsEmpty) return path;
 
         if (IsRoot)
         {
@@ -87,7 +106,6 @@ public readonly struct VPath : IEquatable<VPath>
             return new VPath(DirectorySeparator + path.FullPath);
         }
 
-        // Use ValueStringBuilder implementation from optimization #2
         int estimatedLength = FullPath.Length + 1 + path.FullPath.Length;
         Span<char> buffer = estimatedLength <= 256
             ? stackalloc char[estimatedLength]
@@ -110,17 +128,27 @@ public readonly struct VPath : IEquatable<VPath>
         return new VPath(sb.ToString());
     }
 
+    /// <summary>
+    /// Checks if the current VPath starts with another one
+    /// </summary>
+    /// <param name="path">The path to check against</param>
+    /// <returns>True if the current VPath starts with the given path, false otherwise</returns>
     public bool StartsWith(VPath path)
     {
-        if (path.IsNull || path.IsEmpty) return true;
-        if (IsNull || IsEmpty) return false;
+        if (path.IsEmpty) return true;
+        if (IsEmpty) return false;
 
         return FullPath.StartsWith(path.FullPath, PathComparison);
     }
 
+    /// <summary>
+    /// Gets the directory of the current path. If the current path points to a file, it will return the directory
+    /// (eg: /a/b/file.txt -> /a/b/). If the current path is a directory itself
+    /// </summary>
+    /// <returns>The parent path of the current directory</returns>
     public VPath GetDirectory()
     {
-        if (IsNull || IsEmpty || IsRoot) return Empty;
+        if (IsEmpty || IsRoot) return Empty;
 
         ReadOnlySpan<char> pathSpan = FullPath.AsSpan();
         int lastIndex = pathSpan.LastIndexOf(DirectorySeparator);
@@ -133,9 +161,13 @@ public readonly struct VPath : IEquatable<VPath>
         return new VPath(pathSpan[..lastIndex].ToString());
     }
 
-    public string GetFileName()
+    /// <summary>
+    /// Gets the leaf/final segment of the current path.
+    /// </summary>
+    /// <returns>The leaf name of the current path</returns>
+    public string GetLeaf()
     {
-        if (IsNull || IsEmpty) return string.Empty;
+        if (IsEmpty) return string.Empty;
 
         if (IsRoot)
         {
@@ -143,19 +175,160 @@ public readonly struct VPath : IEquatable<VPath>
         }
 
         int lastIndex = FullPath.LastIndexOf(DirectorySeparator);
-        if (lastIndex < 0) return FullPath;
-        if (lastIndex == FullPath.Length - 1) return string.Empty;
 
         return FullPath[(lastIndex + 1)..];
     }
 
-    // TODO: Optimize with spans
+    /// <summary>
+    /// Gets the filename of the path. This asumes a file.ext format
+    /// </summary>
+    /// <returns>The filename if file.ext pattern is present, otherwise string.empty</returns>
+    public string GetFileName()
+    {
+        // Either no path, or is a directory
+        if (IsEmpty || IsRoot) return string.Empty;
+
+        ReadOnlySpan<char> pathSpan = FullPath.AsSpan();
+
+        // Check if the path ends with a file (assume file.ext)
+        // Take the last segment
+        int lastSegmentIndex = pathSpan.LastIndexOf(DirectorySeparator);
+        if (lastSegmentIndex <= 0) return string.Empty;
+
+        ReadOnlySpan<char> finalSegment = FullPath.AsSpan(lastSegmentIndex + 1);
+
+        // Check if the final segment resembles a file
+        int extensionIndex = finalSegment.LastIndexOf('.');
+        if (extensionIndex >= 0)
+        {
+            return finalSegment.ToString();
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Splits the path into it's segments. If the path is empty, null or the root,
+    /// this will return an empty array.
+    /// </summary>
+    /// <returns>An array of segmemnts, or an empty array (if null, empty or root)</returns>
     public string[] Split()
     {
-        if (IsNull || IsEmpty || IsRoot) return [];
+        if (IsEmpty || IsRoot) return [];
 
-        return FullPath
-            .Split(DirectorySeparatorString, StringSplitOptions.RemoveEmptyEntries);
+        ReadOnlySpan<char> pathSpan = FullPath.AsSpan();
+        MemoryExtensions.SpanSplitEnumerator<char> segmentRanges = pathSpan.Split(DirectorySeparator);
+        int segmentCount = 0;
+        foreach (Range segmentRange in segmentRanges)
+        {
+            // Skip empty segments
+            if (segmentRange.End.Value > segmentRange.Start.Value)
+            {
+                segmentCount++;
+            }
+        }
+
+        // Return early if there are no segments
+        if (segmentCount == 0) return [];
+
+        string[] segments = new string[segmentCount];
+        int index = 0;
+        foreach (Range range in segmentRanges)
+        {
+            if (range.End.Value > range.Start.Value)
+            {
+                segments[index++] = pathSpan[range].ToString();
+            }
+        }
+
+        return segments;
+    }
+
+    /// <summary>
+    /// Navigates one directory "up" to the parent directory. If the file ends on an extension, then move to the
+    /// parent directory of its directory (eg: /a/b/file.txt -> /a/)
+    /// </summary>
+    /// <returns>A VPath of the parent directory</returns>
+    public VPath Up()
+    {
+        // Can't navigate up from root
+        if (IsRoot) return this;
+        if (IsEmpty && IsAbsolute) return Root;
+        if (IsEmpty && IsAbsolute == false) return Empty;
+
+        ReadOnlySpan<char> pathSpan = FullPath.AsSpan();
+
+        // Check if the path ends with a file (assume file.ext)
+        // Take the last segment
+        int lastSegmentIndex = pathSpan.LastIndexOf(DirectorySeparator);
+        if (lastSegmentIndex < 0 && IsAbsolute) return Root;
+
+        ReadOnlySpan<char> finalSegment = FullPath.AsSpan(lastSegmentIndex + 1);
+
+        // Check if the final segment resembles a file
+        int extensionIndex = finalSegment.LastIndexOf('.');
+        if (extensionIndex >= 0)
+        {
+            // If it has an extension, ommit this segment
+            pathSpan = FullPath.AsSpan(0, lastSegmentIndex);
+        }
+
+        lastSegmentIndex = pathSpan.LastIndexOf(DirectorySeparator);
+
+        if (lastSegmentIndex < 0)
+        {
+            // If there's no directory separator, return root
+            if (IsAbsolute) return Root;
+            return Empty; // No parent for relative paths without separators
+        }
+
+        VPath p = new(pathSpan[..lastSegmentIndex].ToString());
+
+        if (IsAbsolute && p.IsEmpty)
+        {
+            return Root;
+        }
+
+        return p;
+    }
+
+    /// <summary>
+    /// Removes a part of the path, starting from the front
+    /// </summary>
+    /// <param name="reduction">The part of the path to reduce</param>
+    /// <returns>A new path that has the reduction removed</returns>
+    public VPath ReduceStart(VPath reduction)
+    {
+        if (reduction.IsEmpty || reduction.IsRoot) return this;
+
+        ReadOnlySpan<char> pathSpan = FullPath.AsSpan();
+        ReadOnlySpan<char> reductionSpan = reduction.FullPath.AsSpan();
+
+        // Check if the reduction is a prefix of the path
+        if (pathSpan.StartsWith(reductionSpan))
+        {
+            // If it is, remove it
+            pathSpan = pathSpan[reductionSpan.Length..];
+        }
+
+        return new VPath(pathSpan.ToString());
+    }
+
+    public VPath ReduceEnd(VPath reduction)
+    {
+        if (reduction.IsEmpty || reduction.IsRoot) return this;
+
+        ReadOnlySpan<char> pathSpan = FullPath.AsSpan();
+        ReadOnlySpan<char> reductionSpan = reduction.FullPath.AsSpan();
+
+        // Check if the reduction is a suffix of the path
+        if (pathSpan.EndsWith(reductionSpan))
+        {
+            // If it is, remove it
+            pathSpan = pathSpan[..^reductionSpan.Length];
+        }
+
+        return new VPath(pathSpan.ToString());
     }
 
     public override string ToString() => FullPath;
@@ -166,6 +339,10 @@ public readonly struct VPath : IEquatable<VPath>
 
     public static bool operator ==(VPath left, VPath right) => left.Equals(right);
     public static bool operator !=(VPath left, VPath right) => left.Equals(right) == false;
+
+    public static VPath operator +(VPath left, VPath right) => left.Append(right);
+    public static VPath operator +(VPath left, string right) => left.FullPath + right;
+    public static VPath operator /(VPath left, VPath right) => left.Append(right);
 
     public static implicit operator VPath(string path) => new(path);
     public static explicit operator string(VPath path) => path.FullPath;

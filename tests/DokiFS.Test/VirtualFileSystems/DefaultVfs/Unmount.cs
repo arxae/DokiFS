@@ -2,7 +2,7 @@ using DokiFS.Exceptions;
 using DokiFS.Interfaces;
 using FakeItEasy;
 
-namespace DokiFS.Tests.VirtualFileSystems.Default;
+namespace DokiFS.Tests.VirtualFileSystems.DefaultVfs;
 
 public class DefaultVfsUnmountTests
 {
@@ -33,8 +33,7 @@ public class DefaultVfsUnmountTests
         VPath mountPoint = "/";
         VirtualFileSystem fs = new();
 
-
-        Assert.Throws<VfsException>(() => fs.Unmount(mountPoint));
+        Assert.Throws<MountPointConflictException>(() => fs.Unmount(mountPoint));
     }
 
     [Fact(DisplayName = "Unmount: Should throw exception when unmounting is refused")]

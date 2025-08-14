@@ -10,7 +10,7 @@ public class MemoryFileSystemBackendCopyDirectoryTests
         MemoryFileSystemBackend backend = new();
 
         VPath source = "/moveSource";
-        VPath dirFile = source.Combine("file1.txt");
+        VPath dirFile = source.Append("file1.txt");
         VPath destination = "/moveDest";
 
         backend.CreateDirectory(source);

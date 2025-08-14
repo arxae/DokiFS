@@ -8,7 +8,7 @@ namespace DokiFS;
 public class VirtualFileSystem : IVirtualFileSystem
 {
     readonly ConcurrentDictionary<VPath, IFileSystemBackend> mounts = new();
-    readonly object mountLock = new();
+    readonly Lock mountLock = new();
 
     // Mount Management
     public void Mount(VPath mountPoint, IFileSystemBackend backend)
@@ -102,11 +102,18 @@ public class VirtualFileSystem : IVirtualFileSystem
 
         foreach (KeyValuePair<VPath, IFileSystemBackend> curMount in currentMounts)
         {
-            if (path.StartsWith(curMount.Key + VPath.DirectorySeparatorString))
+            if (curMount.Key.IsRoot) continue;
+
+            if (curMount.Key.StartsWith(path))
             {
                 backend = curMount.Value;
                 return true;
             }
+        }
+
+        if (mounts.TryGetValue("/", out backend))
+        {
+            return true;
         }
 
         return false;

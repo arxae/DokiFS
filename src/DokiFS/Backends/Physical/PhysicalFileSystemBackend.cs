@@ -86,10 +86,10 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
         DirectoryInfo directoryInfo = new(physicalPath);
 
         IEnumerable<VfsEntry> directories = directoryInfo.EnumerateDirectories()
-            .Select(d => VfsEntry.FromFileSystemInfo(d, path.Combine(d.Name), typeof(PhysicalFileSystemBackend), "Physical Folder"));
+            .Select(d => VfsEntry.FromFileSystemInfo(d, path.Append(d.Name), typeof(PhysicalFileSystemBackend), "Physical Folder"));
 
         IEnumerable<VfsEntry> files = directoryInfo.EnumerateFiles()
-            .Select(f => VfsEntry.FromFileSystemInfo(f, path.Combine(f.Name), typeof(PhysicalFileSystemBackend), "Physical File"));
+            .Select(f => VfsEntry.FromFileSystemInfo(f, path.Append(f.Name), typeof(PhysicalFileSystemBackend), "Physical File"));
 
         return directories.Concat(files);
     }

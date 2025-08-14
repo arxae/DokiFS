@@ -16,7 +16,7 @@ public class MemoryFileSystemBackendCreateFileTests
 
         Assert.True(backend.Exists(path));
         Assert.NotNull(entry);
-        Assert.Equal(path.GetFileName(), entry.FileName);
+        Assert.Equal(path.GetLeaf(), entry.FileName);
         Assert.Equal(path, entry.FullPath);
         Assert.Equal(VfsEntryType.File, entry.EntryType);
         Assert.Equal(0, entry.Size);
