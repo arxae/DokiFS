@@ -16,7 +16,7 @@ public class VirtualFileSystem : IVirtualFileSystem
 
     public void Mount(VPath mountPoint, IFileSystemBackend backend, bool force)
     {
-        ArgumentNullException.ThrowIfNull(backend, nameof(backend));
+        ArgumentNullException.ThrowIfNull(backend);
 
         // Check mount point format
         if (mountPoint.StartsWith("/") == false)
@@ -27,7 +27,7 @@ public class VirtualFileSystem : IVirtualFileSystem
         lock (mountLock)
         {
             // Check if mount point is already in use
-            if (mounts.TryGetValue(mountPoint, out IFileSystemBackend existingBackend))
+            if (mounts.TryGetValue(mountPoint, out IFileSystemBackend _))
             {
                 throw new MountPointConflictException(mountPoint, "Mount point is already in use");
             }
@@ -41,13 +41,11 @@ public class VirtualFileSystem : IVirtualFileSystem
                 throw new MountRefusedException(result);
             }
             // If the result is accepted, or force is true, mount the backend
-            else if (result == MountResult.Accepted || (result != MountResult.Accepted && force))
+            else if ((result == MountResult.Accepted || force)
+                && (mounts.TryAdd(mountPoint, backend) == false))
             {
                 // This should not happen, but throw a generic exception
-                if (mounts.TryAdd(mountPoint, backend) == false)
-                {
-                    throw new VfsException("Unable to add mount due to unspecified error");
-                }
+                throw new VfsException("Unable to add mount due to unspecified error");
             }
         }
     }
@@ -184,13 +182,63 @@ public class VirtualFileSystem : IVirtualFileSystem
         => MoveFile(sourcePath, destinationPath, false);
 
     public void MoveFile(VPath sourcePath, VPath destinationPath, bool overwrite)
-        => MoveCopyFileOperation(CopyMoveOperations.Move, sourcePath, destinationPath, overwrite);
+    {
+        bool foundSourceBackend = TryGetMountedBackend(sourcePath, out IFileSystemBackend sourceBackend, out VPath sourceBackendPath);
+        bool foundDestinationBackend = TryGetMountedBackend(destinationPath, out IFileSystemBackend destinationBackend, out VPath destinationBackendPath);
+
+        if (foundSourceBackend == false)
+        {
+            throw new BackendNotFoundException(sourcePath, "File Move - Source");
+        }
+
+        if (foundDestinationBackend == false)
+        {
+            throw new BackendNotFoundException(destinationPath, "File Move - Destination");
+        }
+
+        // If source and destination are the same backend, we can use the normal backend operation
+        if (ReferenceEquals(sourceBackend, destinationBackend))
+        {
+            sourceBackend.MoveFile(sourceBackendPath, destinationBackendPath, overwrite);
+            return;
+        }
+
+        MoveCopyFileOperation(CopyMoveOperations.Move,
+            sourceBackend, sourceBackendPath,
+            destinationBackend, destinationBackendPath,
+            overwrite);
+    }
 
     public void CopyFile(VPath sourcePath, VPath destinationPath)
         => CopyFile(sourcePath, destinationPath, false);
 
     public void CopyFile(VPath sourcePath, VPath destinationPath, bool overwrite)
-        => MoveCopyFileOperation(CopyMoveOperations.Copy, sourcePath, destinationPath, overwrite);
+    {
+        bool foundSourceBackend = TryGetMountedBackend(sourcePath, out IFileSystemBackend sourceBackend, out VPath sourceBackendPath);
+        bool foundDestinationBackend = TryGetMountedBackend(destinationPath, out IFileSystemBackend destinationBackend, out VPath destinationBackendPath);
+
+        if (foundSourceBackend == false)
+        {
+            throw new BackendNotFoundException(sourcePath, "File Copy - Source");
+        }
+
+        if (foundDestinationBackend == false)
+        {
+            throw new BackendNotFoundException(destinationPath, "File Copy - Destination");
+        }
+
+        // If source and destination are the same backend, we can use the normal backend operation
+        if (ReferenceEquals(sourceBackend, destinationBackend))
+        {
+            sourceBackend.CopyFile(sourceBackendPath, destinationBackendPath, overwrite);
+            return;
+        }
+
+        MoveCopyFileOperation(CopyMoveOperations.Copy,
+            sourceBackend, sourceBackendPath,
+            destinationBackend, destinationBackendPath,
+            overwrite);
+    }
 
     // Filestreams
     public Stream OpenRead(VPath path)
@@ -251,39 +299,14 @@ public class VirtualFileSystem : IVirtualFileSystem
         .ThenBy(kvp => kvp.Key.FullPath, StringComparer.Ordinal)];
 
     enum CopyMoveOperations { Copy, Move }
-    void MoveCopyFileOperation(CopyMoveOperations op, VPath sourcePath, VPath destinationPath, bool overwrite)
+    static void MoveCopyFileOperation(CopyMoveOperations op,
+        IFileSystemBackend sourceBackend, VPath sourceBackendPath,
+        IFileSystemBackend destinationBackend, VPath destinationBackendPath,
+        bool overwrite)
     {
-        bool foundSourceBackend = TryGetMountedBackend(sourcePath, out IFileSystemBackend sourceBackend, out VPath sourceBackendPath);
-        bool foundDestinationBackend = TryGetMountedBackend(destinationPath, out IFileSystemBackend destinationBackend, out VPath destinationBackendPath);
-
-        if (foundSourceBackend == false)
-        {
-            throw new BackendNotFoundException(sourcePath, $"File {op} - Source");
-        }
-
-        if (foundDestinationBackend == false)
-        {
-            throw new BackendNotFoundException(destinationPath, $"File {op} - Destination");
-        }
-
-        // If source and destination are the same backend, we can use the normal backend operation
-        if (ReferenceEquals(sourceBackend, destinationBackend))
-        {
-            if (op == CopyMoveOperations.Copy)
-            {
-                sourceBackend.CopyFile(sourceBackendPath, destinationBackendPath, overwrite);
-            }
-            else
-            {
-                sourceBackend.MoveFile(sourceBackendPath, destinationBackendPath, overwrite);
-            }
-
-            return;
-        }
-
         // Different backends, stream the file from one to the other
         using Stream sourceStream = sourceBackend.OpenRead(sourceBackendPath);
-        FileMode writeMode = overwrite ? FileMode.Create : FileMode.CreateNew; // TODO: Check if these are the correct modes
+        FileMode writeMode = overwrite ? FileMode.Create : FileMode.CreateNew;
         using Stream destStream = destinationBackend.OpenWrite(destinationBackendPath, writeMode, FileAccess.Write, FileShare.None);
 
         const int bufferSize = 81920;
@@ -352,12 +375,10 @@ public class VirtualFileSystem : IVirtualFileSystem
             return;
         }
 
-        // Different backends, we need to copy the directory structure manually
-        // Check if destination exists
-        bool destinationExists = false;
+        // Different backends, we need to copy the directory structure manually. Check if destination exists
         try
         {
-            destinationExists = destinationBackend.Exists(destinationBackendPath);
+            destinationBackend.Exists(destinationBackendPath);
         }
         catch (Exception) { /* Ignore errors and assume it doesn't exist */ }
 
@@ -387,57 +408,12 @@ public class VirtualFileSystem : IVirtualFileSystem
             }
             else if (entry.EntryType == VfsEntryType.File)
             {
-                // Repeat the other method here for now so we only have to retrieve the backends on
-                // TODO: Look into replacing this entire thing to avoid the duplication
-
-                using Stream sourceStream = sourceBackend.OpenRead(entry.FullPath);
-                using Stream destStream = destinationBackend.OpenWrite(entry.FullPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-
-                const int bufferSize = 81920;
-                byte[] buffer = new byte[bufferSize];
-                int bytesRead;
-                long totalBytesCopied = 0;
-                while ((bytesRead = sourceStream.Read(buffer, 0, buffer.Length)) > 0)
-                {
-                    destStream.Write(buffer, 0, bytesRead);
-                    totalBytesCopied += bytesRead;
-                }
-
-                destStream.Flush();
-
-                // Verify length
-                if (sourceStream.Length != totalBytesCopied)
-                {
-                    throw new IOException($"File copy failed: expected {sourceStream.Length} bytes but copied {totalBytesCopied} bytes");
-                }
-
-                sourceStream.Dispose();
-                destStream.Dispose();
-
-                // If destination backend requires a commit, call it
-                if (destinationBackend is ICommit commitBackend)
-                {
-                    commitBackend.Commit();
-                }
-
-                // If we are moving the file, delete it from the source backend
-                if (op == CopyMoveOperations.Move)
-                {
-                    try
-                    {
-                        sourceBackend.DeleteFile(sourceBackendPath);
-                    }
-                    catch (Exception deleteEx)
-                    {
-                        // This leaves the system in an inconsistent state (file copied but not moved)
-                        throw new VfsException($"Failed to delete source file '{sourceBackendPath}' after successful transfer during move operation. Destination '{destinationBackendPath}' may exist.", deleteEx);
-                    }
-                }
+                MoveCopyFileOperation(op, sourceBackend, entry.FullPath, destinationBackend, entry.FullPath, true);
             }
         }
     }
 
-    public IEnumerable<IVfsEntry> GatherEntries(IFileSystemBackend backend, VPath backendPath)
+    static IEnumerable<IVfsEntry> GatherEntries(IFileSystemBackend backend, VPath backendPath)
     {
         HashSet<IVfsEntry> entries = [];
         Queue<VPath> directoriesToProcess = [];

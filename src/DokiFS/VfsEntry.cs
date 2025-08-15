@@ -128,19 +128,9 @@ public class VfsEntry : IVfsEntry
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) || RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
-                try
-                {
-                    using FileStream _ = new(fileInfo.FullName, FileMode.Open, FileAccess.Write);
-                    return false; // If we can open it for read/write, it's not read-only
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    return true;
-                }
-                catch (IOException)
-                {
-                    return true;
-                }
+
+                using FileStream _ = new(fileInfo.FullName, FileMode.Open, FileAccess.Write);
+                return false; // If we can open it for read/write, it's not read-only
             }
         }
         else if (info is DirectoryInfo dirInfo)

@@ -3,7 +3,8 @@ namespace DokiFS.Backends.Memory.Nodes;
 public class MemoryFileNode : MemoryNode, IDisposable
 {
     byte[] content;
-    readonly object contentLock = new();
+    readonly Lock contentLock = new();
+    bool disposed;
 
     public override long Size => content?.Length ?? 0;
 
@@ -61,8 +62,24 @@ public class MemoryFileNode : MemoryNode, IDisposable
 
     public void Dispose()
     {
+        Dispose(true);
         GC.SuppressFinalize(this);
-        content = null;
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposed == false)
+        {
+            if (disposing)
+            {
+                lock (contentLock)
+                {
+                    content = null;
+                }
+            }
+
+            disposed = true;
+        }
     }
 
     sealed class MemoryFileWriteStream : MemoryStream

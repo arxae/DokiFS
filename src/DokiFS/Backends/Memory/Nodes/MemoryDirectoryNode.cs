@@ -3,6 +3,7 @@ namespace DokiFS.Backends.Memory.Nodes;
 public class MemoryDirectoryNode : MemoryNode, IDisposable
 {
     public List<MemoryNode> Children { get; } = [];
+    bool disposed;
 
     public MemoryDirectoryNode(VPath path)
     {
@@ -56,13 +57,26 @@ public class MemoryDirectoryNode : MemoryNode, IDisposable
 
     public void Dispose()
     {
+        Dispose(true);
         GC.SuppressFinalize(this);
-        foreach (MemoryNode child in Children)
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposed == false)
         {
-            if (child is IDisposable disposableChild)
+            if (disposing)
             {
-                disposableChild.Dispose();
+                foreach (MemoryNode child in Children)
+                {
+                    if (child is IDisposable disposableChild)
+                    {
+                        disposableChild.Dispose();
+                    }
+                }
             }
+
+            disposed = true;
         }
     }
 }

@@ -9,6 +9,7 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
     public BackendProperties BackendProperties => BackendProperties.Transient;
 
     readonly MemoryRoot root;
+    bool disposed;
 
     public MemoryFileSystemBackend()
     {
@@ -335,7 +336,7 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
         }
 
         // Check if destination already exists
-        if (TryGetNode(destinationPath, out MemoryNode existingDestNode))
+        if (TryGetNode(destinationPath, out MemoryNode _))
         {
             throw new IOException($"Destination directory already exists: '{destinationPath}'");
         }
@@ -408,7 +409,7 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
                 newFile.FullPath = childDestPath;
                 newDir.AddChild(newFile);
             }
-            else if (child is MemoryDirectoryNode dirNode)
+            else if (child is MemoryDirectoryNode)
             {
                 // Recursively copy directory
                 CopyDirectory(child.FullPath, childDestPath);
@@ -502,7 +503,20 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
 
     public void Dispose()
     {
+        Dispose(true);
         GC.SuppressFinalize(this);
-        root.Dispose();
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposed == false)
+        {
+            if (disposing)
+            {
+                root.Dispose();
+            }
+
+            disposed = true;
+        }
     }
 }

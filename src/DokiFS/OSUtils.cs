@@ -67,7 +67,6 @@ internal static class OSUtils
             }
 
             string output = proc.StandardOutput.ReadToEnd();
-            string errorOutput = proc.StandardError.ReadToEnd();
             proc.WaitForExit();
 
             // lsof exit codes:

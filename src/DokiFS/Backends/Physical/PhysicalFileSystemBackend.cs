@@ -14,7 +14,7 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
 
     public PhysicalFileSystemBackend(string physicalPath)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(physicalPath, nameof(physicalPath));
+        ArgumentException.ThrowIfNullOrWhiteSpace(physicalPath);
 
         // If an absolute path is used, get the full path
         string fullRoot;
@@ -142,12 +142,9 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
         // On non-windows systems we need to use lsof to check if a file is in use, since deleting a in use
         // fails silentely on these platfors
         // On windows, File.Delete throws an exception when the file is in use.
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) == false)
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) == false && OSUtils.UnixFileInUse(physicalPath))
         {
-            if (OSUtils.UnixFileInUse(physicalPath))
-            {
-                throw new IOException($"File '{path}' is in use by another process and cannot be deleted.");
-            }
+            throw new IOException($"File '{path}' is in use by another process and cannot be deleted.");
         }
 
         File.Delete(physicalPath);
@@ -221,10 +218,6 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
         {
             // Remap to a more accurate exception
             throw new IOException($"Path points to a directory: '{path}'");
-        }
-        catch
-        {
-            throw;
         }
     }
 
