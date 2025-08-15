@@ -166,5 +166,5 @@ public class VfsEntry : IVfsEntry
         => throw new NotImplementedException();
 
     public override string ToString()
-        => $"{FileName} ({(EntryType == VfsEntryType.Directory ? "Directory" : "File")}) - {Size} bytes, Backend: {FromBackend?.FullName ?? "Unknown"}, Description: {Description ?? "N/A"}";
+        => $"{FileName} ({EntryType}) - {Size} bytes, Backend: {FromBackend?.FullName ?? "Unknown"}, Description: {Description ?? "N/A"}";
 }

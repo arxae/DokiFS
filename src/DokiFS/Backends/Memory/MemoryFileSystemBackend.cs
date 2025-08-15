@@ -49,6 +49,24 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
         throw new FileNotFoundException($"Path not found within backend: '{path}'");
     }
 
+    public IEnumerable<IVfsEntry> ListDirectory(VPath path, params VfsEntryType[] filter)
+    {
+        if (TryGetNode(path, out MemoryNode node))
+        {
+            if (node is MemoryDirectoryNode dirNode)
+            {
+                IEnumerable<IVfsEntry> children = dirNode.Children.Cast<IVfsEntry>();
+                return children.Where(entry => filter.Contains(entry.EntryType));
+            }
+            else
+            {
+                throw new InvalidOperationException($"Path '{path}' is not a directory.");
+            }
+        }
+
+        throw new FileNotFoundException($"Path not found within backend: '{path}'");
+    }
+
     // File Operations
     public void CreateFile(VPath path, long size = 0)
     {

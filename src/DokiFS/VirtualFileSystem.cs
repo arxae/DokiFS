@@ -151,11 +151,30 @@ public class VirtualFileSystem : IVirtualFileSystem
     {
         if (TryGetMountedBackend(path, out IFileSystemBackend backend, out VPath backendPath))
         {
-            return backend.ListDirectory(backendPath);
+            IEnumerable<IVfsEntry> entries = backend.ListDirectory(backendPath);
+
+            // Get the mount points that allso apply to this direct path
+            IEnumerable<VfsEntry> mountPoints = GetMountPoints()
+                .Where(mp => mp.Key != VPath.Root && mp.Key.StartsWith(path))
+                .Select(m =>
+                {
+                    return new VfsEntry(m.Key, VfsEntryType.MountPoint, VfsEntryProperties.Readonly)
+                    {
+                        FullPath = m.Key,
+                        Description = $"Mount Point ({m.Value.GetType().Name})",
+                        FromBackend = m.Value.GetType(),
+                        LastWriteTime = DateTime.UtcNow
+                    };
+                });
+
+            return entries.Concat(mountPoints);
         }
 
         throw new BackendNotFoundException(path, nameof(ListDirectory));
     }
+
+    public IEnumerable<IVfsEntry> ListDirectory(VPath path, params VfsEntryType[] filter)
+        => ListDirectory(path).Where(entry => filter.Contains(entry.EntryType));
 
     // File Operations
     public void CreateFile(VPath path, long size = 0)

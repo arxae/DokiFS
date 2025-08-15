@@ -19,7 +19,10 @@ public interface IVfsEntry
 public enum VfsEntryType
 {
     File,
-    Directory
+    Directory,
+    MountPoint,
+    Virtual,
+    Archive
 }
 
 [Flags]

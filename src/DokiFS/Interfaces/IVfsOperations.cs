@@ -6,6 +6,7 @@ public interface IVfsOperations
     bool Exists(VPath path);
     IVfsEntry GetInfo(VPath path);
     IEnumerable<IVfsEntry> ListDirectory(VPath path);
+    IEnumerable<IVfsEntry> ListDirectory(VPath path, VfsEntryType[] filter);
 
     // File Operations
     void CreateFile(VPath path, long size = 0);
