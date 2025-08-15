@@ -16,7 +16,7 @@ public class DefaultVfTryGetMountedBackendTests
         VirtualFileSystem fs = new();
         fs.Mount(mountPoint, backend);
 
-        bool result = fs.TryGetMountedBackend(mountPoint, out IFileSystemBackend outputBackend);
+        bool result = fs.TryGetMountedBackend(mountPoint, out IFileSystemBackend outputBackend, out VPath _);
 
         Assert.True(result);
         Assert.IsAssignableFrom<IFileSystemBackend>(outputBackend);
@@ -34,7 +34,7 @@ public class DefaultVfTryGetMountedBackendTests
         VirtualFileSystem fs = new();
         fs.Mount(mountPoint, backend);
 
-        bool result = fs.TryGetMountedBackend(retrievalPath, out IFileSystemBackend outputBackend);
+        bool result = fs.TryGetMountedBackend(retrievalPath, out IFileSystemBackend outputBackend, out VPath _);
 
         Assert.True(result);
         Assert.IsAssignableFrom<IFileSystemBackend>(outputBackend);
@@ -52,7 +52,7 @@ public class DefaultVfTryGetMountedBackendTests
         VirtualFileSystem fs = new();
         fs.Mount(mountPoint, backend);
 
-        bool result = fs.TryGetMountedBackend(retrievalPath, out IFileSystemBackend outputBackend);
+        bool result = fs.TryGetMountedBackend(retrievalPath, out IFileSystemBackend outputBackend, out VPath _);
 
         Assert.False(result);
         Assert.Null(outputBackend);
@@ -78,9 +78,9 @@ public class DefaultVfTryGetMountedBackendTests
         fs.Mount("/test/inner/most", backend4);
 
         // Retrieve in random-ish order
-        bool result4 = fs.TryGetMountedBackend("/test/inner/most", out IFileSystemBackend outputBackend4);
-        bool result2 = fs.TryGetMountedBackend("/test/", out IFileSystemBackend outputBackend2);
-        bool result3 = fs.TryGetMountedBackend("/test/inner", out IFileSystemBackend outputBackend3);
+        bool result4 = fs.TryGetMountedBackend("/test/inner/most", out IFileSystemBackend outputBackend4, out VPath _);
+        bool result2 = fs.TryGetMountedBackend("/test/", out IFileSystemBackend outputBackend2, out VPath _);
+        bool result3 = fs.TryGetMountedBackend("/test/inner", out IFileSystemBackend outputBackend3, out VPath _);
 
         Assert.True(result2);
         Assert.True(result3);

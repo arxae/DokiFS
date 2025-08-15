@@ -9,7 +9,7 @@ public interface IVirtualFileSystem : IVfsOperations
     void Unmount(VPath mountPoint);
     void Unmount(VPath mountPoint, bool force);
     bool IsMounted(VPath mountPoint);
-    bool TryGetMountedBackend(VPath path, [MaybeNullWhen(false)] out IFileSystemBackend backend);
+    bool TryGetMountedBackend(VPath path, [MaybeNullWhen(false)] out IFileSystemBackend backend, [MaybeNullWhen(false)] out VPath backendPath);
     IEnumerable<KeyValuePair<VPath, IFileSystemBackend>> GetMountPoints();
 
 
