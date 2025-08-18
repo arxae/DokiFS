@@ -112,16 +112,13 @@ public class VirtualResourceBackend : IFileSystemBackend
     }
 
     public IEnumerable<IVfsEntry> ListDirectory(VPath path)
-        => ListDirectory(path, []);
-
-    public IEnumerable<IVfsEntry> ListDirectory(VPath path, VfsEntryType[] filter)
     {
         if (TryResolveHandler(path, out IVirtualResourceHandler handler, out VPath pathRemainder) == false)
         {
             throw new DirectoryNotFoundException();
         }
 
-        if (path == "/" && (filter.Contains(VfsEntryType.Directory) || filter.Length == 0))
+        if (path == "/")
         {
             List<IVfsEntry> entries = [];
             lock (handlerLock)
@@ -144,7 +141,7 @@ public class VirtualResourceBackend : IFileSystemBackend
             return entries;
         }
 
-        return handler.HandleListDirectory(pathRemainder, filter);
+        return handler.HandleListDirectory(pathRemainder);
     }
 
     public void CreateFile(VPath path, long size = 0)

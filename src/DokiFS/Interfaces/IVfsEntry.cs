@@ -13,7 +13,6 @@ public interface IVfsEntry
 
     Stream OpenRead();
     Stream OpenWrite(FileMode mode = FileMode.OpenOrCreate, FileAccess access = FileAccess.ReadWrite, FileShare share = FileShare.Read);
-
 }
 
 public enum VfsEntryType

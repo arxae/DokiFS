@@ -10,7 +10,6 @@ public interface IVirtualResourceHandler
     bool HandleExist(VPath path);
     IVfsEntry HandleGetInfo(VPath path);
     IEnumerable<IVfsEntry> HandleListDirectory(VPath path);
-    IEnumerable<IVfsEntry> HandleListDirectory(VPath path, VfsEntryType[] filter);
     Stream HandleOpenRead(VPath path);
     Stream HandleOpenWrite(VPath path, FileMode mode = FileMode.OpenOrCreate, FileAccess access = FileAccess.ReadWrite);
 }

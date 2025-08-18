@@ -104,7 +104,7 @@ public class VirtualResourceBackendHandlerTests
     public void ShouldHandleListDirectory()
     {
         IVirtualResourceHandler handler = A.Fake<IVirtualResourceHandler>();
-        A.CallTo(() => handler.HandleListDirectory(A<VPath>._, A<VfsEntryType[]>.That.IsEmpty())).Returns([
+        A.CallTo(() => handler.HandleListDirectory(A<VPath>._)).Returns([
             new VfsEntry("/test/file1.txt", VfsEntryType.File, VfsEntryProperties.Default),
             new VfsEntry("/test/file2.txt", VfsEntryType.File, VfsEntryProperties.Default)
         ]);

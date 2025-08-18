@@ -17,9 +17,31 @@ public readonly struct VPath : IEquatable<VPath>
     public string FullPath { get; }
     public int Length => FullPath.Length;
 
+    /// <summary>
+    /// Returns true if the path is empty (null or length 0)
+    /// </summary>
     public bool IsEmpty => FullPath is { Length: 0 } or null;
+
+    /// <summary>
+    /// Returns true if the path is absolute (starts with a directory separator)
+    /// </summary>
     public bool IsAbsolute => FullPath is { Length: > 0 } && FullPath[0] == DirectorySeparator;
+
+    /// <summary>
+    /// Returns true if the path is the root path (a single directory separator)
+    /// </summary>
     public bool IsRoot => FullPath?.Length == 1 && FullPath[0] == DirectorySeparator;
+
+    /// <summary>
+    /// Returns true if the path is a directory (ends with a directory separator)
+    /// </summary>
+    public bool IsDirectory => FullPath?.EndsWith(DirectorySeparatorString, PathComparison) ?? false;
+
+    /// <summary>
+    /// Returns true if the path points to a hidden entry (final segment starts with a dot)
+    /// </summary>
+    public bool IsHidden => (FullPath is not { Length: > 0 } || FullPath[^1] != DirectorySeparator)
+        && FullPath.AsSpan().TrimEnd(DirectorySeparator).EndsWith('.');
 
     public VPath(string path)
     {
@@ -95,8 +117,6 @@ public readonly struct VPath : IEquatable<VPath>
     /// <returns>A new VPath instance representing the combined path</returns>
     public VPath Append(VPath path)
     {
-        if (path.IsAbsolute) return path;
-
         if (path.IsEmpty) return this;
         if (IsEmpty) return path;
 

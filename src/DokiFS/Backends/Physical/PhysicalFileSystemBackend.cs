@@ -94,10 +94,6 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
         return directories.Concat(files);
     }
 
-    public IEnumerable<IVfsEntry> ListDirectory(VPath path, params VfsEntryType[] filter)
-        => ListDirectory(path)
-            .Where(entry => filter.Contains(entry.EntryType));
-
     // --- File operations
     public void CreateFile(VPath path, long size = 0)
     {
