@@ -1,4 +1,3 @@
-using System.Data;
 using DokiFS.Backends.Memory.Nodes;
 using DokiFS.Interfaces;
 
@@ -38,7 +37,7 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
         {
             if (node is MemoryDirectoryNode dirNode)
             {
-                return dirNode.Children.Cast<IVfsEntry>();
+                return dirNode.Children;
             }
             else
             {
@@ -419,7 +418,7 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
 
     bool TryGetNode(VPath path, out MemoryNode node)
     {
-        // No lock here, assume caller holds the lock
+        // Handle special cases
         if (path == VPath.Root)
         {
             node = root;
@@ -432,56 +431,43 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
             return false;
         }
 
-        string[] segments = path.Split();
+        return TryTraversePath(path.Split(), out node);
+    }
 
-        // start at root and traverse until child is found
-        VPath currentPath = VPath.Root;
+    bool TryTraversePath(string[] segments, out MemoryNode node)
+    {
         MemoryDirectoryNode currentNode = root;
 
         for (int i = 0; i < segments.Length; i++)
         {
-            string segment = segments[i];
+            bool isLastSegment = i == segments.Length - 1;
 
-            // If it's the last segment, we are looking for either a file or directory
-            if (i == segments.Length - 1)
+            if (isLastSegment)
             {
-                // First try to find a file with this name
-                if (currentNode.Children.FirstOrDefault(c => c.FullPath.GetLeaf() == segment) is MemoryFileNode fileNode)
-                {
-                    node = fileNode;
-                    return true;
-                }
+                node = FindNodeInDirectory(currentNode, segments[i]);
+                return node != null;
+            }
 
-                // Then try to find a directory with this name
-                if (currentNode.Children.FirstOrDefault(c => c.FullPath.GetLeaf() == segment && c is MemoryDirectoryNode) is MemoryDirectoryNode dirNode)
-                {
-                    node = dirNode;
-                    return true;
-                }
-
-                // Neither found
+            // Try to move to next directory
+            MemoryDirectoryNode nextDir = FindDirectoryInNode(currentNode, segments[i]);
+            if (nextDir == null)
+            {
                 node = null;
                 return false;
             }
-            else
-            {
-                // Traverse directories
-                if (currentNode.Children.FirstOrDefault(c => c.FullPath.GetLeaf() == segment && c is MemoryDirectoryNode) is MemoryDirectoryNode nextDir)
-                {
-                    currentNode = nextDir;
-                    currentPath = currentPath.Append(segment);
-                }
-                else
-                {
-                    node = null;
-                    return false; // Directory not found
-                }
-            }
+
+            currentNode = nextDir;
         }
 
         node = null;
         return false;
     }
+
+    MemoryNode FindNodeInDirectory(MemoryDirectoryNode directory, string name)
+        => directory.Children.FirstOrDefault(c => c.FullPath.GetLeaf() == name);
+
+    MemoryDirectoryNode FindDirectoryInNode(MemoryDirectoryNode directory, string name)
+        => directory.Children.FirstOrDefault(c => c.FullPath.GetLeaf() == name && c is MemoryDirectoryNode) as MemoryDirectoryNode;
 
     void UpdateChildPaths(MemoryDirectoryNode directory, VPath oldBasePath, VPath newBasePath)
     {

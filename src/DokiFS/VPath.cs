@@ -134,16 +134,16 @@ public readonly struct VPath : IEquatable<VPath>
         ValueStringBuilder sb = new(buffer);
 
         // Copy the first path
-        for (int i = 0; i < FullPath.Length; i++)
-            sb.Append(FullPath[i]);
+        foreach (char t in FullPath)
+            sb.Append(t);
 
         // Add separator if needed
         if (FullPath[^1] != DirectorySeparator)
             sb.Append(DirectorySeparator);
 
         // Copy the second path
-        for (int i = 0; i < path.FullPath.Length; i++)
-            sb.Append(path.FullPath[i]);
+        foreach (char t in path.FullPath)
+            sb.Append(t);
 
         return new VPath(sb.ToString());
     }

@@ -11,7 +11,7 @@ public interface IVirtualFileSystem : IVfsOperations
     bool IsMounted(VPath mountPoint);
     bool TryGetMountedBackend(VPath path, [MaybeNullWhen(false)] out IFileSystemBackend backend, [MaybeNullWhen(false)] out VPath backendPath);
     IEnumerable<KeyValuePair<VPath, IFileSystemBackend>> GetMountPoints();
-
+    VPath GetMountPoint(IFileSystemBackend backend);
 
 
     // TODO: Move to extension methods?

@@ -5,7 +5,10 @@ namespace DokiFS.Backends.Archive;
 
 public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
 {
-    public BackendProperties BackendProperties => BackendProperties.RequiresCommit;
+    public BackendProperties BackendProperties =>
+        BackendProperties.RequiresCommit
+        | BackendProperties.Cached;
+
     public bool AutoCommit { get; set; }
 
     readonly string archivePath;

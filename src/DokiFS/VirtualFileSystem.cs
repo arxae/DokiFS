@@ -127,6 +127,9 @@ public class VirtualFileSystem : IVirtualFileSystem
 
     public IEnumerable<KeyValuePair<VPath, IFileSystemBackend>> GetMountPoints() => mounts.AsReadOnly();
 
+    public VPath GetMountPoint(IFileSystemBackend backend)
+        => mounts.FirstOrDefault(m => m.Value == backend).Key;
+
     // Queries
     public bool Exists(VPath path)
     {
@@ -156,22 +159,33 @@ public class VirtualFileSystem : IVirtualFileSystem
 
             // Get the mount points that allso apply to this direct path
             IEnumerable<VfsEntry> mountPoints = GetMountPoints()
-                .Where(mp => mp.Key != VPath.Root && mp.Key.StartsWith(path))
+                .Where(mp => mp.Key != VPath.Root && mp.Key != path && mp.Key.StartsWith(path))
                 .Select(m =>
-                {
-                    return new VfsEntry(m.Key, VfsEntryType.MountPoint, VfsEntryProperties.Readonly)
+                    new VfsEntry(m.Key, VfsEntryType.MountPoint, VfsEntryProperties.Readonly)
                     {
                         FullPath = m.Key,
                         Description = $"Mount Point ({m.Value.GetType().Name})",
                         FromBackend = m.Value.GetType(),
                         LastWriteTime = DateTime.UtcNow
-                    };
-                });
+                    });
 
             return entries.Concat(mountPoints);
         }
 
-        throw new BackendNotFoundException(path, nameof(ListDirectory));
+        if (mounts.IsEmpty)
+        {
+            throw new BackendNotFoundException(path, nameof(ListDirectory));
+        }
+
+        return mounts
+            .Select(m =>
+                new VfsEntry(m.Key, VfsEntryType.MountPoint, VfsEntryProperties.Readonly)
+                {
+                    FullPath = m.Key,
+                    Description = $"Mount Point ({m.Value.GetType().Name})",
+                    FromBackend = m.Value.GetType(),
+                    LastWriteTime = DateTime.UtcNow
+                });
     }
 
     public IEnumerable<IVfsEntry> ListDirectory(VPath path, params VfsEntryType[] filter)
@@ -262,14 +276,9 @@ public class VirtualFileSystem : IVirtualFileSystem
 
     // Filestreams
     public Stream OpenRead(VPath path)
-    {
-        if (TryGetMountedBackend(path, out IFileSystemBackend backend, out VPath backendPath))
-        {
-            return backend.OpenRead(backendPath);
-        }
-
-        throw new BackendNotFoundException(path, nameof(OpenRead));
-    }
+        => TryGetMountedBackend(path, out IFileSystemBackend backend, out VPath backendPath)
+            ? new ReadOnlyStream(backend.OpenRead(backendPath))
+            : throw new BackendNotFoundException(path, nameof(OpenRead));
 
     public Stream OpenWrite(VPath path)
         => OpenWrite(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
