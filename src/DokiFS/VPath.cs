@@ -1,3 +1,5 @@
+using System.Security.Cryptography.X509Certificates;
+
 namespace DokiFS;
 
 /// <summary>
@@ -84,6 +86,12 @@ public readonly struct VPath : IEquatable<VPath>
             return path;
         }
 
+        return NormalizeString(length, span);
+    }
+
+    // This actually normalizes the string
+    static string NormalizeString(int length, ReadOnlySpan<char> span)
+    {
         // Allocate only what we need (or slightly more)
         // Most paths won't grow during normalization, they'll shrink or stay the same
         Span<char> buffer = length <= 256 ? stackalloc char[length] : new char[length];
@@ -197,6 +205,22 @@ public readonly struct VPath : IEquatable<VPath>
         int lastIndex = FullPath.LastIndexOf(DirectorySeparator);
 
         return FullPath[(lastIndex + 1)..];
+    }
+
+    /// <summary>
+    /// Get the first segment of the current path. eg: /a/b/c -> /a/
+    /// </summary>
+    /// <returns>The root name of the current path</returns>
+    public string GetRoot()
+    {
+        if (IsEmpty || IsRoot) return string.Empty;
+
+        ReadOnlySpan<char> pathSpan = FullPath.AsSpan();
+        int firstIndex = pathSpan.IndexOf(DirectorySeparator);
+
+        if (firstIndex < 0) return FullPath;
+
+        return pathSpan[..firstIndex].ToString();
     }
 
     /// <summary>

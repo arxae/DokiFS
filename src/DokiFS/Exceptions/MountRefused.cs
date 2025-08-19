@@ -26,6 +26,9 @@ public class MountRefusedException : Exception
             MountResult.NotInitialized => "The backend rejected the mount because it was not initialized",
             MountResult.ResourceUnavailable => "The backend rejected the mount because it's underlying resource is not available",
             MountResult.AuthenticationFailure => "The backend rejected the mount because it has to authenticate with a resource, but it couldn't",
+            MountResult.PathRefused => "The backend refused to be mounted to this path",
+            MountResult.RootPathRefused => "The backend refused to be mounted as root",
+            MountResult.NotRootPath => "The backend refused because it must be mounted as root",
             _ => "The backend accepted the mount, but an unspecified error occured",
         };
     }
@@ -54,8 +57,8 @@ public class UnmountRefusedException : Exception
             UnmountResult.Refused => "The backend rejected the unmount, but no reason was given",
             UnmountResult.InUse => "The backend rejected the unmount because it's still in use",
             UnmountResult.PendingWrites => "The backend rejected the unmount because it still has writes pending",
-            UnmountResult.ResourceFailure
-                => "The backend rejected the unmount because the underlying resource has an error or is unavailable",
+            UnmountResult.ResourceFailure => "The backend rejected the unmount because the underlying resource has an error or is unavailable",
+            UnmountResult.UncommittedChanges => "The backend refused to be unmounted with uncommitted changes",
             _ => "The backend accepted the unmount, but an unspecified error occured"
         };
     }

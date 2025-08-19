@@ -39,13 +39,11 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
             {
                 return dirNode.Children;
             }
-            else
-            {
-                throw new InvalidOperationException($"Path '{path}' is not a directory.");
-            }
+
+            throw new InvalidOperationException($"Path '{path}' is not a directory.");
         }
 
-        throw new FileNotFoundException($"Path not found within backend: '{path}'");
+        throw new DirectoryNotFoundException($"Path not found within backend: '{path}'");
     }
 
     // File Operations

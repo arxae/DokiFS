@@ -86,11 +86,8 @@ public class VirtualResourceBackendHandlerTests
             Description = "Virtual resource backend root"
         };
 
-        IVfsEntry? nullEntry = null;
-
         A.CallTo(() => handler.HandleGetInfo(A<VPath>._)).Returns(A.Fake<IVfsEntry>());
         A.CallTo(() => handler.HandleGetInfo(VPath.Root)).Returns(rootEntry);
-        A.CallTo(() => handler.HandleGetInfo("/nonexistent.txt")).Returns(nullEntry);
 
         VirtualResourceBackend backend = new();
         backend.RegisterHandler("/test", handler);

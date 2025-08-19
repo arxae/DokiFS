@@ -300,6 +300,8 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
         archive = ZipFile.Open(archivePath, zipMode);
     }
 
+    public void Discard() { }
+
     ZipArchiveEntry GetEntry(VPath path)
     {
         foreach (ZipArchiveEntry entry in archive.Entries)
