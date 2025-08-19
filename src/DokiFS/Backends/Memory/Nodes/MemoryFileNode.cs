@@ -84,20 +84,20 @@ public class MemoryFileNode : MemoryNode, IDisposable
 
     sealed class MemoryFileWriteStream : MemoryStream
     {
-        private readonly MemoryFileNode _owner;
+        private readonly MemoryFileNode owner;
 
         public MemoryFileWriteStream(MemoryFileNode owner)
         {
-            _owner = owner;
+            this.owner = owner;
         }
 
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
-                lock (_owner.contentLock)
+                lock (owner.contentLock)
                 {
-                    _owner.content = ToArray();
+                    owner.content = ToArray();
                 }
             }
             base.Dispose(disposing);

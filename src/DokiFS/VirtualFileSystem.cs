@@ -40,8 +40,9 @@ public class VirtualFileSystem : IVirtualFileSystem
             {
                 throw new MountRefusedException(result);
             }
+
             // If the result is accepted, or force is true, mount the backend
-            else if ((result == MountResult.Accepted || force)
+            if ((result == MountResult.Accepted || force)
                 && (mounts.TryAdd(mountPoint, backend) == false))
             {
                 // This should not happen, but throw a generic exception
@@ -323,6 +324,11 @@ public class VirtualFileSystem : IVirtualFileSystem
         IFileSystemBackend destinationBackend, VPath destinationBackendPath,
         bool overwrite)
     {
+        if (destinationBackend.BackendProperties.HasFlag(BackendProperties.ReadOnly))
+        {
+            throw new UnauthorizedAccessException($"Cannot write to read-only backend {destinationBackend}");
+        }
+
         // Different backends, stream the file from one to the other
         using Stream sourceStream = sourceBackend.OpenRead(sourceBackendPath);
         FileMode writeMode = overwrite ? FileMode.Create : FileMode.CreateNew;

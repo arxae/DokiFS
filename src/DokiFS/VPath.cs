@@ -316,8 +316,9 @@ public readonly struct VPath : IEquatable<VPath>
     /// Removes a part of the path, starting from the front
     /// </summary>
     /// <param name="reduction">The part of the path to reduce</param>
+    /// <param name="additional">Extra characters to reduce</param>
     /// <returns>A new path that has the reduction removed</returns>
-    public VPath ReduceStart(VPath reduction)
+    public VPath ReduceStart(VPath reduction, int additional = 0)
     {
         if (reduction.IsEmpty || reduction.IsRoot) return this;
 
@@ -328,7 +329,8 @@ public readonly struct VPath : IEquatable<VPath>
         if (pathSpan.StartsWith(reductionSpan))
         {
             // If it is, remove it
-            pathSpan = pathSpan[reductionSpan.Length..];
+            int l = reductionSpan.Length + additional;
+            pathSpan = pathSpan[l..];
         }
 
         return new VPath(pathSpan.ToString());

@@ -173,6 +173,23 @@ csharp_preserve_single_line_blocks = true
 # https://docs.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/formatting-rules#namespace-options
 csharp_style_namespace_declarations = file_scoped:warning
 
+# Naming Styles
+# public properties start with upper case
+dotnet_naming_symbols.public_properties.applicable_kinds = property
+dotnet_naming_symbols.public_properties.applicable_accessibilities = public
+dotnet_naming_style.pascal_case_style.capitalization = pascal_case
+dotnet_naming_rule.public_properties_should_be_pascal_case.symbols = public_properties
+dotnet_naming_rule.public_properties_should_be_pascal_case.style = pascal_case_style
+dotnet_naming_rule.public_properties_should_be_pascal_case.severity = warning
+
+# private properties start with lower case
+dotnet_naming_symbols.private_properties.applicable_kinds = property
+dotnet_naming_symbols.private_properties.applicable_accessibilities = private, internal, protected, protected_internal
+dotnet_naming_style.camel_case_style.capitalization = camel_case
+dotnet_naming_rule.private_properties_should_be_camel_case.symbols = private_properties
+dotnet_naming_rule.private_properties_should_be_camel_case.style = camel_case_style
+dotnet_naming_rule.private_properties_should_be_camel_case.severity = warning
+
 # Undocumented
 dotnet_style_operator_placement_when_wrapping = end_of_line:warning
 csharp_style_prefer_null_check_over_type_check = true:warning
