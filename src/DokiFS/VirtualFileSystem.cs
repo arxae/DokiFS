@@ -130,6 +130,25 @@ public class VirtualFileSystem : IVirtualFileSystem
     public VPath GetMountPoint(IFileSystemBackend backend)
         => mounts.FirstOrDefault(m => m.Value == backend).Key;
 
+    public void ExecuteAs<T>(VPath path, Action<T> action)
+    {
+        if (TryGetMountedBackend(path, out IFileSystemBackend backend, out _))
+        {
+            if (backend is T typedBackend)
+            {
+                action(typedBackend);
+            }
+            else
+            {
+                throw new InvalidOperationException($"Backend at path '{path}' is not of type {typeof(T).Name}");
+            }
+        }
+        else
+        {
+            throw new BackendNotFoundException(path, nameof(ExecuteAs));
+        }
+    }
+
     // Queries
     public bool Exists(VPath path)
     {
