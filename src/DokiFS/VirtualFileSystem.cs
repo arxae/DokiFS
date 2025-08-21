@@ -5,7 +5,7 @@ using DokiFS.Interfaces;
 
 namespace DokiFS;
 
-public class VirtualFileSystem : IVirtualFileSystem
+public class VirtualFileSystem : IVirtualFileSystem, IVfsOperations
 {
     readonly ConcurrentDictionary<VPath, IFileSystemBackend> mounts = new();
     readonly Lock mountLock = new();
@@ -21,7 +21,7 @@ public class VirtualFileSystem : IVirtualFileSystem
         // Check mount point format
         if (mountPoint.StartsWith("/") == false)
         {
-            throw new ArgumentException("Mount points should start with '/'");
+            throw new FormatException("Mount points should start with '/'");
         }
 
         lock (mountLock)
@@ -61,7 +61,7 @@ public class VirtualFileSystem : IVirtualFileSystem
             // Check if there actually is something mounted at the mount point
             if (mounts.TryGetValue(mountPoint, out IFileSystemBackend backend) == false)
             {
-                throw new MountPointConflictException(mountPoint, $"There is already a backend present at mount point {mountPoint}");
+                throw new BackendNotFoundException(mountPoint, $"There is nothing mounted at {mountPoint}");
             }
 
             // Check with the backend if it's ready to be unmounted
@@ -73,7 +73,7 @@ public class VirtualFileSystem : IVirtualFileSystem
                 throw new UnmountRefusedException(result);
             }
             // If the result is accepted, or force is true, unmount the backend
-            else if (result == UnmountResult.Accepted || (result != UnmountResult.Accepted && force))
+            else if (result == UnmountResult.Accepted || force)
             {
                 KeyValuePair<VPath, IFileSystemBackend> mnt = mounts.FirstOrDefault(m => m.Key == mountPoint);
                 if (mounts.TryRemove(mnt) == false)
@@ -96,7 +96,7 @@ public class VirtualFileSystem : IVirtualFileSystem
         }
 
         // Get the sorted mount, for cases with overlap. For example /mnt and /mnt/a.
-        // Both are valid, but /mnt/a has precedence in regards to mountpoints
+        // Both are valid, but /mnt/a has precedence in regard to mount points
         List<KeyValuePair<VPath, IFileSystemBackend>> currentMounts;
         lock (mountLock) { currentMounts = GetSortedMounts(); }
 
@@ -140,7 +140,7 @@ public class VirtualFileSystem : IVirtualFileSystem
             }
             else
             {
-                throw new InvalidOperationException($"Backend at path '{path}' is not of type {typeof(T).Name}");
+                throw new InvalidCastException($"Backend at path '{path}' is not of type {typeof(T).Name}");
             }
         }
         else
@@ -151,24 +151,14 @@ public class VirtualFileSystem : IVirtualFileSystem
 
     // Queries
     public bool Exists(VPath path)
-    {
-        if (TryGetMountedBackend(path, out IFileSystemBackend backend, out VPath backendPath))
-        {
-            return backend.Exists(backendPath);
-        }
-
-        throw new BackendNotFoundException(path, nameof(Exists));
-    }
+        => TryGetMountedBackend(path, out IFileSystemBackend backend, out VPath backendPath)
+            ? backend.Exists(backendPath)
+            : throw new BackendNotFoundException(path, nameof(Exists));
 
     public IVfsEntry GetInfo(VPath path)
-    {
-        if (TryGetMountedBackend(path, out IFileSystemBackend backend, out VPath backendPath))
-        {
-            return backend.GetInfo(backendPath);
-        }
-
-        throw new BackendNotFoundException(path, nameof(GetInfo));
-    }
+        => TryGetMountedBackend(path, out IFileSystemBackend backend, out VPath backendPath)
+            ? backend.GetInfo(backendPath)
+            : throw new BackendNotFoundException(path, nameof(GetInfo));
 
     public IEnumerable<IVfsEntry> ListDirectory(VPath path)
     {
@@ -176,7 +166,7 @@ public class VirtualFileSystem : IVirtualFileSystem
         {
             IEnumerable<IVfsEntry> entries = backend.ListDirectory(backendPath);
 
-            // Get the mount points that allso apply to this direct path
+            // Get the mount points that also apply to this direct path
             IEnumerable<VfsEntry> mountPoints = GetMountPoints()
                 .Where(mp => mp.Key != VPath.Root && mp.Key != path && mp.Key.StartsWith(path))
                 .Select(m =>
@@ -293,7 +283,7 @@ public class VirtualFileSystem : IVirtualFileSystem
             overwrite);
     }
 
-    // Filestreams
+    // File streams
     public Stream OpenRead(VPath path)
         => TryGetMountedBackend(path, out IFileSystemBackend backend, out VPath backendPath)
             ? new ReadOnlyStream(backend.OpenRead(backendPath))
@@ -380,27 +370,27 @@ public class VirtualFileSystem : IVirtualFileSystem
             throw new IOException($"File copy failed: expected {sourceStream.Length} bytes but copied {totalBytesCopied} bytes");
         }
 
-        sourceStream.Dispose();
-        destStream.Dispose();
 
         // If destination backend requires a commit, call it
         if (destinationBackend is ICommit commitBackend)
         {
+            // Dispose earlier in case commit also touches the files
+            sourceStream.Dispose();
+            destStream.Dispose();
             commitBackend.Commit();
         }
 
         // If we are moving the file, delete it from the source backend
-        if (op == CopyMoveOperations.Move)
+        if (op != CopyMoveOperations.Move) return;
+
+        try
         {
-            try
-            {
-                sourceBackend.DeleteFile(sourceBackendPath);
-            }
-            catch (Exception deleteEx)
-            {
-                // This leaves the system in an inconsistent state (file copied but not moved)
-                throw new VfsException($"Failed to delete source file '{sourceBackendPath}' after successful transfer during move operation. Destination '{destinationBackendPath}' may exist.", deleteEx);
-            }
+            sourceBackend.DeleteFile(sourceBackendPath);
+        }
+        catch (Exception deleteEx)
+        {
+            // This leaves the system in an inconsistent state (file copied but not moved)
+            throw new VfsException($"Failed to delete source file '{sourceBackendPath}' after successful transfer during move operation. Destination '{destinationBackendPath}' may exist.", deleteEx);
         }
     }
 
@@ -455,13 +445,14 @@ public class VirtualFileSystem : IVirtualFileSystem
 
         foreach (IVfsEntry entry in entries)
         {
-            if (entry.EntryType == VfsEntryType.Directory)
+            switch (entry.EntryType)
             {
-                destinationBackend.CreateDirectory(entry.FullPath);
-            }
-            else if (entry.EntryType == VfsEntryType.File)
-            {
-                MoveCopyFileOperation(op, sourceBackend, entry.FullPath, destinationBackend, entry.FullPath, true);
+                case VfsEntryType.Directory:
+                    destinationBackend.CreateDirectory(entry.FullPath);
+                    break;
+                case VfsEntryType.File:
+                    MoveCopyFileOperation(op, sourceBackend, entry.FullPath, destinationBackend, entry.FullPath, true);
+                    break;
             }
         }
     }

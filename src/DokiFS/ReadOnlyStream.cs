@@ -1,6 +1,6 @@
 namespace DokiFS;
 
-internal class ReadOnlyStream(Stream baseStream) : Stream
+internal sealed class ReadOnlyStream(Stream baseStream) : Stream
 {
     readonly Stream innerStream = baseStream;
 

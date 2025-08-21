@@ -139,8 +139,8 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
             throw new FileNotFoundException($"File not found: '{path}'");
         }
 
-        // On non-windows systems we need to use lsof to check if a file is in use, since deleting a in use
-        // fails silentely on these platfors
+        // On non-windows systems we need to use lsof to check if a file is in use, since deleting an in use
+        // fails silently on these platforms
         // On windows, File.Delete throws an exception when the file is in use.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) == false && OSUtils.UnixFileInUse(physicalPath))
         {
@@ -264,7 +264,7 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
     {
         TryGetPhysicalPath(path, out string physicalPath);
 
-        // On mac, Directory.Delete throws a DirectoryNotFoundException instead of an IOException.
+        // On Mac, Directory.Delete throws a DirectoryNotFoundException instead of an IOException.
         // Check here to make sure the exceptions are the same across platforms
         if (GetInfo(path).EntryType == VfsEntryType.File)
         {
