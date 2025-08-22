@@ -121,15 +121,19 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
             }
         }
 
-        bool destinationFolderFound = TryGetNode(sourcePath.GetDirectory(), out MemoryNode destinationFolderNode);
+        bool destinationFolderFound = TryGetNode(destinationPath.GetDirectory(), out MemoryNode destinationFolderNode);
         if (destinationFolderFound == false)
         {
             throw new DirectoryNotFoundException($"Destination directory not found: '{destinationPath}'");
         }
 
         // Move node
-        MemoryDirectoryNode parent = sourceNode.Parent as MemoryDirectoryNode;
+        if (sourceNode.Parent == null)
+        {
+            throw new DetachedNodeException(sourceNode);
+        }
         MemoryFileNode file = sourceNode as MemoryFileNode;
+        MemoryDirectoryNode parent = sourceNode.Parent as MemoryDirectoryNode;
 
         // Remove from the original folder
         parent.RemoveChild(file);

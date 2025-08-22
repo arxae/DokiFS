@@ -117,7 +117,7 @@ public class VirtualFileSystem : IVirtualFileSystem, IVfsOperations
 
         if (mounts.TryGetValue("/", out backend))
         {
-            backendPath = VPath.Root;
+            backendPath = path;
             return true;
         }
 
