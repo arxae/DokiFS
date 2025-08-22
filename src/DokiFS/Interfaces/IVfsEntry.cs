@@ -27,7 +27,8 @@ public enum VfsEntryType
 [Flags]
 public enum VfsEntryProperties
 {
-    Default,
-    Readonly,
-    Hidden
+    Default = 0,
+    Readonly = 1,
+    Hidden = 2,
+    Virtual = 4
 }

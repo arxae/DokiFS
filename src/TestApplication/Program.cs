@@ -1,8 +1,6 @@
-﻿using System.Diagnostics;
-using DokiFS;
+﻿using DokiFS;
+using DokiFS.Backends.Journal;
 using DokiFS.Backends.Memory;
-using DokiFS.Backends.Physical;
-using DokiFS.Extensions;
 
 namespace TestApplication;
 
@@ -13,28 +11,27 @@ public static class Program
         string ppath = AppDomain.CurrentDomain.BaseDirectory;
 
         VirtualFileSystem fs = new();
-        fs.Mount("/", new PhysicalFileSystemBackend(ppath));
-        fs.Mount("/mem", new MemoryFileSystemBackend());
+        MemoryFileSystemBackend mem = new();
+        fs.Mount("/", mem);
+        fs.Mount("/jr", new JournalFileSystemBackend());
 
-        VPath tempFile = fs.GetTempFile("/mem/temp");
-
-        Console.WriteLine(tempFile);
-
-        fs.ListDirectory("/mem/temp")
-            .ToList()
-            .ForEach(Console.WriteLine);
-
-
-        using (Stream stream = fs.OpenWrite(tempFile))
-        using (StreamWriter writer = new(stream))
+        // Record journal entries
+        // fs.CreateFile("/jr/testtest.txt", 1024);
+        using (Stream stream = fs.OpenWrite("/jr/test.txt"))
+        using (StreamWriter writer = new StreamWriter(stream))
         {
-            writer.Write("this is a testline");
+            writer.WriteLine("Hello");
+            writer.WriteLine("World");
         }
 
-        using (Stream stream = fs.OpenRead(tempFile))
+        Console.WriteLine(fs.GetInfo("/jr/test.txt"));
+
+        using (Stream stream = fs.OpenRead("/jr/test.txt"))
         using (StreamReader reader = new(stream))
         {
-            Console.Write(reader.ReadToEnd());
+            Console.WriteLine(reader.ReadToEnd());
         }
+
+        Console.WriteLine(fs.GetInfo("/jr/test.txt"));
     }
 }

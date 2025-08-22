@@ -208,7 +208,7 @@ public class VirtualFileSystem : IVirtualFileSystem, IVfsOperations
             throw new BackendNotFoundException(path, nameof(CreateFile));
         }
 
-        backend.CreateFile(backendPath, size);
+        backend.CreateFile(backendPath == VPath.Root ? path : backendPath, size);
     }
 
     public void DeleteFile(VPath path)
@@ -218,7 +218,7 @@ public class VirtualFileSystem : IVirtualFileSystem, IVfsOperations
             throw new BackendNotFoundException(path, nameof(DeleteFile));
         }
 
-        backend.DeleteFile(backendPath);
+        backend.DeleteFile(backendPath == VPath.Root ? path : backendPath);
     }
 
     public void MoveFile(VPath sourcePath, VPath destinationPath)
