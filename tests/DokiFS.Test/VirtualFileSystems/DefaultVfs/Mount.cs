@@ -38,7 +38,7 @@ public class DefaultVfsMountTests
         VPath doubleBackslash = "\\\\test3";
 
         // Should throw because it doesnt start with /
-        Assert.Throws<ArgumentException>(() => fs.Mount(invalidMountPoint, backend));
+        Assert.Throws<FormatException>(() => fs.Mount(invalidMountPoint, backend));
 
         // Should not throw because vpath will turn any number of \\ into /
         Exception? ex1 = Record.Exception(() => fs.Mount(singleBackslash, backend));

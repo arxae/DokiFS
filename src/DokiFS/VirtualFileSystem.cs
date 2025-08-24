@@ -423,7 +423,14 @@ public class VirtualFileSystem : IVirtualFileSystem, IVfsOperations
         {
             destinationBackend.Exists(destinationBackendPath);
         }
-        catch (Exception) { /* Ignore errors and assume it doesn't exist */ }
+        catch (FileNotFoundException)
+        {
+            // Expected for "doesn't exist", so we keep destinationExists = false
+        }
+        catch (Exception ex)
+        {
+            throw new VfsException($"Failed to check existence of destination directory '{destinationPath}'", ex);
+        }
 
         // Create the destination directory
         destinationBackend.CreateDirectory(destinationBackendPath);

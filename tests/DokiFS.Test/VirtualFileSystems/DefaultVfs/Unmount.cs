@@ -33,7 +33,7 @@ public class DefaultVfsUnmountTests
         VPath mountPoint = "/";
         VirtualFileSystem fs = new();
 
-        Assert.Throws<MountPointConflictException>(() => fs.Unmount(mountPoint));
+        Assert.Throws<BackendNotFoundException>(() => fs.Unmount(mountPoint));
     }
 
     [Fact(DisplayName = "Unmount: Should throw exception when unmounting is refused")]

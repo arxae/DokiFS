@@ -323,9 +323,10 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
         {
             physicalPath = Path.GetFullPath(Path.Combine(BackendRoot, (string)path));
         }
-        catch (ArgumentException ex)
+        catch
         {
-            throw new ArgumentException($"Invalid character(s) in path", ex);
+            physicalPath = null;
+            return false;
         }
 
         // Verify that the path is actually part of the backend.
