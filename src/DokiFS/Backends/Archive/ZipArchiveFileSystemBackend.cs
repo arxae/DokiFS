@@ -277,12 +277,10 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
         }
         else
         {
-            foreach (ZipArchiveEntry e in archive.Entries.ToList())
+            foreach (ZipArchiveEntry e in archive.Entries
+                .Where(e => e.FullName.StartsWith(path.FullPath, StringComparison.OrdinalIgnoreCase)))
             {
-                if (e.FullName.StartsWith(path.FullPath, StringComparison.OrdinalIgnoreCase))
-                {
-                    e.Delete();
-                }
+                e.Delete();
             }
         }
 

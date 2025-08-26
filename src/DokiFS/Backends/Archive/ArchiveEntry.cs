@@ -1,5 +1,4 @@
-﻿using System.IO.Compression;
-using DokiFS.Interfaces;
+﻿using DokiFS.Interfaces;
 
 namespace DokiFS.Backends.Archive;
 

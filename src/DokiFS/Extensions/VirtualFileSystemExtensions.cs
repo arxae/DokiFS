@@ -1,4 +1,3 @@
-using System.Reflection.Metadata.Ecma335;
 using DokiFS.Interfaces;
 
 namespace DokiFS.Extensions;
@@ -9,7 +8,7 @@ public static class VirtualFileSystemExtensions
     const string tempPrefix = "tmp";
     const string tempSuffix = ".tmp";
 
-    static Random rng = new();
+    static readonly Random rng = new();
 
     public static VPath GetTempFile(this IVirtualFileSystem vfs, VPath basePath = default)
     {
@@ -21,7 +20,6 @@ public static class VirtualFileSystemExtensions
         bool successful = vfs.TryGetMountedBackend(basePath, out IFileSystemBackend backend, out VPath backendPath);
 
         // If the first attempt failed, use the first available backend
-        // TODO: Test this part
         if (successful == false)
         {
             VPath secondAttemptPath = vfs.GetMountPoints().FirstOrDefault().Key;
@@ -31,19 +29,11 @@ public static class VirtualFileSystemExtensions
             {
                 throw new FileNotFoundException("Could not find available backend for file", basePath.FullPath);
             }
-
-            basePath = backendPath;
-
-            // KeyValuePair<VPath, IFileSystemBackend> be = vfs.GetMountPoints().FirstOrDefault();
-            //
-            // backend = be.Value
-            //     ?? throw new FileNotFoundException("Could not find available backend for file", basePath.FullPath);
-            // basePath = be.Key.Append(basePath);
         }
 
         for (int attempts = 0; attempts < 10; attempts++)
         {
-            string randomPart = new([..Enumerable.Range(0, 6).Select(_ => tempChars[rng.Next(tempChars.Length)])]);
+            string randomPart = new([.. Enumerable.Range(0, 6).Select(_ => tempChars[rng.Next(tempChars.Length)])]);
             VPath candidatePath = Path.Combine(backendPath.FullPath, tempPrefix + randomPart + tempSuffix);
 
             try

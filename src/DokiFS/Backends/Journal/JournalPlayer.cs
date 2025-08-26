@@ -121,150 +121,45 @@ public class JournalPlayer : IDisposable
     /// </remarks>
     /// <param name="entry">The JournalEntry to execute</param>
     /// <exception cref="JournalInterruptedException">Thrown when a action and paramstack cannot be mapped to a backend method</exception>
-    // TODO: Try to detect when the method is called outside of MoveForward/MoveBackwards and insert the JournalEntry into the journal
     public void ApplySingleEntry(JournalEntry entry)
     {
         switch (entry.JournalAction)
         {
             case JournalActions.CreateFile:
-            {
-                VPath path = (VPath)entry.ParamStack[0];
-                if (entry.ParamStack.Length > 1)
-                {
-                    long size = (long)entry.ParamStack[1];
-                    backend.CreateFile(path, size);
-                }
-                else
-                {
-                    backend.CreateFile(path);
-                }
-            }
-            break;
+                ApplySingleEntryMethods.CreateFile(entry, backend);
+                break;
 
             case JournalActions.DeleteFile:
-            {
-                VPath path = (VPath)entry.ParamStack[0];
-                // Store the file content before deletion for potential undo
-                if (recordUndo && backend.Exists(path))
-                {
-                    using Stream stream = backend.OpenRead(path);
-                    if (stream.Length > 0)
-                    {
-                        byte[] content = new byte[stream.Length];
-                        stream.ReadExactly(content);
-                        originalFileContents[entry.Id] = content;
-                    }
-                }
-                backend.DeleteFile(path);
-            }
-            break;
+                ApplySingleEntryMethods.DeleteFile(entry, backend, recordUndo, originalFileContents);
+                break;
 
             case JournalActions.MoveFile:
-            {
-                VPath sourcePath = (VPath)entry.ParamStack[0];
-                VPath destinationPath = (VPath)entry.ParamStack[1];
-                bool overwrite = (bool)entry.ParamStack[2];
-
-                // Store the destination file content if it exists and will be overwritten
-                if (recordUndo && overwrite && backend.Exists(destinationPath))
-                {
-                    using Stream stream = backend.OpenRead(destinationPath);
-                    if (stream.Length > 0)
-                    {
-                        byte[] content = new byte[stream.Length];
-                        stream.ReadExactly(content);
-                        originalFileContents[entry.Id] = content;
-                    }
-                }
-
-                backend.MoveFile(sourcePath, destinationPath, overwrite);
-            }
-            break;
+                ApplySingleEntryMethods.MoveFile(entry, backend, recordUndo, originalFileContents);
+                break;
 
             case JournalActions.CopyFile:
-            {
-                VPath sourcePath = (VPath)entry.ParamStack[0];
-                VPath destinationPath = (VPath)entry.ParamStack[1];
-                bool overwrite = (bool)entry.ParamStack[2];
-
-                // Store the destination file content if it exists and will be overwritten
-                if (recordUndo && overwrite && backend.Exists(destinationPath))
-                {
-                    using Stream stream = backend.OpenRead(destinationPath);
-                    if (stream.Length > 0)
-                    {
-                        byte[] content = new byte[stream.Length];
-                        stream.ReadExactly(content);
-                        originalFileContents[entry.Id] = content;
-                    }
-                }
-
-                backend.CopyFile(sourcePath, destinationPath, overwrite);
-            }
-            break;
+                ApplySingleEntryMethods.CopyFile(entry, backend, recordUndo, originalFileContents);
+                break;
 
             case JournalActions.OpenWrite:
-            {
-                VPath path = (VPath)entry.ParamStack[0];
-                FileMode mode = (FileMode)entry.ParamStack[1];
-                FileAccess access = (FileAccess)entry.ParamStack[2];
-                FileShare share = (FileShare)entry.ParamStack[3];
-
-                // Store the original file content if it exists
-                if (recordUndo && backend.Exists(path))
-                {
-                    using Stream stream = backend.OpenRead(path);
-                    if (stream.Length > 0)
-                    {
-                        byte[] content = new byte[stream.Length];
-                        stream.ReadExactly(content);
-                        originalFileContents[entry.Id] = content;
-                    }
-                }
-
-                Stream targetStream = backend.OpenWrite(path, mode, access, share);
-
-                using (targetStream)
-                {
-                    if (entry.Data is { Length: > 0 })
-                    {
-                        targetStream.Write(entry.Data, 0, entry.Data.Length);
-                        targetStream.Flush();
-                    }
-                }
-            }
-            break;
+                ApplySingleEntryMethods.OpenWrite(entry, backend, recordUndo, originalFileContents);
+                break;
 
             case JournalActions.CreateDirectory:
-            {
-                VPath path = (VPath)entry.ParamStack[0];
-                backend.CreateDirectory(path);
-            }
-            break;
+                ApplySingleEntryMethods.CreateDirectory(entry, backend);
+                break;
 
             case JournalActions.DeleteDirectory:
-            {
-                VPath path = (VPath)entry.ParamStack[0];
-                bool recursive = (bool)entry.ParamStack[1];
-                backend.DeleteDirectory(path, recursive);
-            }
-            break;
+                ApplySingleEntryMethods.DeleteDirectory(entry, backend);
+                break;
 
             case JournalActions.MoveDirectory:
-            {
-                VPath sourcePath = (VPath)entry.ParamStack[0];
-                VPath destinationPath = (VPath)entry.ParamStack[1];
-                backend.MoveDirectory(sourcePath, destinationPath);
-            }
-            break;
+                ApplySingleEntryMethods.MoveDirectory(entry, backend);
+                break;
 
             case JournalActions.CopyDirectory:
-            {
-                VPath sourcePath = (VPath)entry.ParamStack[0];
-                VPath destinationPath = (VPath)entry.ParamStack[1];
-                backend.CopyDirectory(sourcePath, destinationPath);
-            }
-            break;
+                ApplySingleEntryMethods.CopyDirectory(entry, backend);
+                break;
             default:
                 // Something went wrong, cancel entire journal application
                 throw new JournalInterruptedException(entry);

@@ -460,6 +460,12 @@ public class VirtualFileSystem : IVirtualFileSystem, IVfsOperations
                 case VfsEntryType.File:
                     MoveCopyFileOperation(op, sourceBackend, entry.FullPath, destinationBackend, entry.FullPath, true);
                     break;
+                // These cannot be moved or copied
+                case VfsEntryType.MountPoint:
+                case VfsEntryType.Virtual:
+                case VfsEntryType.Archive:
+                default:
+                    throw new NotImplementedException();
             }
         }
     }
