@@ -10,7 +10,7 @@ public static class VirtualFileSystemExtensions
 
     static readonly Random rng = new();
 
-    public static VPath GetTempFile(this IVirtualFileSystem vfs, VPath basePath = default)
+    public static VPath GetTempFile(this IVirtualFileSystemContainer vfs, VPath basePath = default)
     {
         if (basePath == default)
         {
@@ -42,7 +42,7 @@ public static class VirtualFileSystemExtensions
                 backend.CreateFile(candidatePath);
                 using Stream _ = backend.OpenWrite(candidatePath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
 
-                VPath mp = vfs.GetMountPoint(backend);
+                VPath mp = vfs.GetMountPoint(backend).FirstOrDefault();
 
                 return mp.Append(candidatePath);
             }

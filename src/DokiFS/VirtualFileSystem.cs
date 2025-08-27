@@ -5,7 +5,7 @@ using DokiFS.Interfaces;
 
 namespace DokiFS;
 
-public class VirtualFileSystem : IVirtualFileSystem, IVfsOperations
+public class VirtualFileSystem : IVirtualFileSystemContainer, IVfsOperations
 {
     readonly ConcurrentDictionary<VPath, IFileSystemBackend> mounts = new();
     readonly Lock mountLock = new();
@@ -127,8 +127,9 @@ public class VirtualFileSystem : IVirtualFileSystem, IVfsOperations
 
     public IEnumerable<KeyValuePair<VPath, IFileSystemBackend>> GetMountPoints() => mounts.AsReadOnly();
 
-    public VPath GetMountPoint(IFileSystemBackend backend)
-        => mounts.FirstOrDefault(m => m.Value == backend).Key;
+    public IEnumerable<VPath> GetMountPoint(IFileSystemBackend backend)
+        => mounts.Where(m => m.Value == backend)
+        .Select(m => m.Key);
 
     public void ExecuteAs<T>(VPath path, Action<T> action)
     {

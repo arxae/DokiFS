@@ -1,32 +1,26 @@
-![plot](./docs/images/dokifs.png)
+---
+_layout: landing
+---
+
+![plot](./images/dokifs.png)
 
 DokiFS is a flexible virtual file system for .NET applications that supports multiple backend storage systems through a
-unified interface. It allows you to mount different types of storage and interact with them using consistent path-based
-operations. Adding your own backends is pretty simple by just implementing the same interface and mount it
+unified interface. It allows you to mount different types of storage and interact with them using consistent path-based operations.
 
 ## Features
-* Compatible with `net9.0+`
 * Multiple backend support: Physical file systems, in-memory storage, zip archives, assembly resources, and more
 * Virtual path abstraction: Work with consistent paths regardless of the underlying storage
 * Journaling capability: Record and replay file operations with the journal backend
 * Backend composition: Mount multiple backends at different paths to create a unified file system
 * Read/write operations: Full support for common file operations (create, read, write, delete, copy, move)
-* Available default backends:
-    * Archive
-    * Assembly Resource
-    * Journal
-    * Memory
-    * Physical
-    * Virtual Resource
 * Cross-platform: Works on Windows, macOS, and Linux
+
+## Requirements
+* .NET 9+
 
 ## Installation
 
 Nuget soon™
-
-## Building
-
-Simply build the `DokiFS` project. At least `net9.0` is required.
 
 ## Basic Usage
 
@@ -68,5 +62,5 @@ fs.Unmount("/temp");
 fs.Unmount("/");
 ```
 
-## License
-MIT License
+## Documentation
+The documentation in the `/docs` folder can be built using docfx

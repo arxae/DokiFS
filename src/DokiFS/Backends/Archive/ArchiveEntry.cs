@@ -6,7 +6,7 @@ public class ArchiveEntry : VfsEntry
 {
     public long CompressedSize { get; set; }
 
-    public ArchiveEntry(VPath path, VfsEntryType type, VfsEntryProperties properties = VfsEntryProperties.Default)
+    public ArchiveEntry(VPath path, VfsEntryType type, VfsEntryProperties properties = VfsEntryProperties.None)
         : base(path, type, properties)
     {
 

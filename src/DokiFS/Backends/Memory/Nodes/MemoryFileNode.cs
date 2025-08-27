@@ -20,7 +20,7 @@ public class MemoryFileNode : MemoryNode, IDisposable
     {
         lock (contentLock)
         {
-            return new MemoryStream(content, false);
+            return new MemoryStream(content ?? [], false);
         }
     }
 

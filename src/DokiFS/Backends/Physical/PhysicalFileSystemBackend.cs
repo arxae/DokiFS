@@ -20,6 +20,7 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
         string fullRoot;
         try
         {
+            physicalPath = VPath.ExpandSpecialFolders(physicalPath);
             fullRoot = Path.GetFullPath(physicalPath);
         }
         catch (Exception ex)

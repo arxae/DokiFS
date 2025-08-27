@@ -11,5 +11,5 @@ docs:
     docfx docfx.json --serve --open-browser
 
 clear-docs:
-    rm -rf _site
-    rm -rf api
+    rm -rf docs/_site
+    rm -rf docs/api

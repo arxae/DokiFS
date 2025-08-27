@@ -489,6 +489,45 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
         }
     }
 
+    /// <summary>
+    /// Dumps the entire filesystem to disk
+    /// </summary>
+    /// <param name="physicalPath">The root folder to use</param>
+    public void Dump(string physicalPath)
+    {
+        // Create the root directory if it doesn't exist
+        Directory.CreateDirectory(physicalPath);
+
+        // Recursively dump all children of the root
+        DumpNode(root, physicalPath);
+    }
+
+    void DumpNode(MemoryNode node, string physicalBasePath)
+    {
+        if (node is MemoryDirectoryNode dirNode)
+        {
+            // For directories, create the directory and dump all children
+            foreach (MemoryNode child in dirNode.Children)
+            {
+                string childPhysicalPath = Path.Combine(physicalBasePath, child.FullPath.GetLeaf());
+
+                if (child is MemoryDirectoryNode)
+                {
+                    // Create directory and recursively dump its contents
+                    Directory.CreateDirectory(childPhysicalPath);
+                    DumpNode(child, childPhysicalPath);
+                }
+                else if (child is MemoryFileNode fileNode)
+                {
+                    // Write file contents to disk
+                    using Stream sourceStream = fileNode.OpenRead();
+                    using FileStream destStream = File.Create(childPhysicalPath);
+                    sourceStream.CopyTo(destStream);
+                }
+            }
+        }
+    }
+
     public void Dispose()
     {
         Dispose(true);

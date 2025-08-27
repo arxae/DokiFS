@@ -53,7 +53,7 @@ public class VfsEntry : IVfsEntry
     /// <summary>
     /// Initializes a new instance of the <see cref="VfsEntry"/> class.
     /// </summary>
-    public VfsEntry(VPath path, VfsEntryType type, VfsEntryProperties properties = VfsEntryProperties.Default)
+    public VfsEntry(VPath path, VfsEntryType type, VfsEntryProperties properties = VfsEntryProperties.None)
     {
         FullPath = path;
         EntryType = type;
@@ -86,13 +86,13 @@ public class VfsEntry : IVfsEntry
             ? (info.Attributes & FileAttributes.Hidden) == FileAttributes.Hidden
             : info.Name.StartsWith('.');
 
-        VfsEntryProperties properties = VfsEntryProperties.Default;
+        VfsEntryProperties properties = VfsEntryProperties.None;
         if (isReadOnly) properties |= VfsEntryProperties.Readonly;
         if (isHidden) properties |= VfsEntryProperties.Hidden;
 
-        if (properties != VfsEntryProperties.Default)
+        if (properties != VfsEntryProperties.None)
         {
-            properties &= ~VfsEntryProperties.Default;
+            properties &= ~VfsEntryProperties.None;
         }
 
         return new VfsEntry()
@@ -128,9 +128,15 @@ public class VfsEntry : IVfsEntry
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) || RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
-
-                using FileStream _ = new(fileInfo.FullName, FileMode.Open, FileAccess.Write);
-                return false; // If we can open it for read/write, it's not read-only
+                try
+                {
+                    using FileStream _ = new(fileInfo.FullName, FileMode.Open, FileAccess.Write);
+                    return false; // If we can open it for read/write, it's not read-only
+                }
+                catch
+                {
+                    return true;
+                }
             }
         }
         else if (info is DirectoryInfo dirInfo)

@@ -8,7 +8,7 @@ namespace DokiFS.Interfaces;
 /// It is recommended that any class implementing this interface also implements the <seealso cref="IVfsOperations"/> IVfsOperations
 /// interface to serve as passthrough and manage cross mount operations
 /// </summary>
-public interface IVirtualFileSystem
+public interface IVirtualFileSystemContainer
 {
     /// <summary>
     /// Mounts a backend to the specified mount point
@@ -85,7 +85,7 @@ public interface IVirtualFileSystem
     /// <returns>The mount point where the backend is mounted</returns>
     /// <exception cref="ArgumentNullException">Thrown when backend is null</exception>
     /// <exception cref="InvalidOperationException">Thrown when the backend is not mounted</exception>
-    VPath GetMountPoint(IFileSystemBackend backend);
+    IEnumerable<VPath> GetMountPoint(IFileSystemBackend backend);
 
     /// <summary>
     /// Executes an action against a backend of a specific type mounted at the given path

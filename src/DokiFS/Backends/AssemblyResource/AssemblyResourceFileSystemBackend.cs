@@ -12,7 +12,7 @@ public class AssemblyResourceFileSystemBackend : IFileSystemBackend, IDisposable
     readonly string resourcePathPrefix; // The namespace of the resource
     readonly AssemblyLoadContext loadContext;
     readonly DateTime assemblyTimestamp;
-    readonly Dictionary<VPath, AssemblyFile> cache = [];
+    readonly Dictionary<VPath, AssemblyFile> fileIndex = [];
     readonly Lock cacheLock = new();
 
     bool disposed;
@@ -45,20 +45,20 @@ public class AssemblyResourceFileSystemBackend : IFileSystemBackend, IDisposable
             throw new IOException("Failed to read the assembly file.", e);
         }
 
-        Cache();
+        Index();
     }
 
     public void UnloadAssembly()
     {
-        cache.Clear();
+        fileIndex.Clear();
         loadContext.Unload();
     }
 
-    public void Cache()
+    public void Index()
     {
         lock (cacheLock)
         {
-            cache.Clear();
+            fileIndex.Clear();
 
             string[] manifestResourceNames;
             try
@@ -104,7 +104,7 @@ public class AssemblyResourceFileSystemBackend : IFileSystemBackend, IDisposable
                     Description = "Embedded Resource File"
                 };
 
-                cache[resourcePath] = file;
+                fileIndex[resourcePath] = file;
             }
         }
     }
@@ -118,9 +118,9 @@ public class AssemblyResourceFileSystemBackend : IFileSystemBackend, IDisposable
         return UnmountResult.Accepted;
     }
 
-    public bool Exists(VPath path) => cache.ContainsKey(path);
+    public bool Exists(VPath path) => fileIndex.ContainsKey(path);
 
-    public IVfsEntry GetInfo(VPath path) => cache.GetValueOrDefault(path);
+    public IVfsEntry GetInfo(VPath path) => fileIndex.GetValueOrDefault(path);
 
     /// <summary>
     /// Lists all files fromn the loaded assembly
@@ -135,12 +135,12 @@ public class AssemblyResourceFileSystemBackend : IFileSystemBackend, IDisposable
             throw new IOException("The assembly file was not loaded.");
         }
 
-        return cache.Select(c => c.Value);
+        return fileIndex.Select(c => c.Value);
     }
 
     public Stream OpenRead(VPath path)
     {
-        AssemblyFile entry = cache.GetValueOrDefault(path)
+        AssemblyFile entry = fileIndex.GetValueOrDefault(path)
             ?? throw new FileNotFoundException($"Failed to find the resource file {path}.");
 
         try

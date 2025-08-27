@@ -78,7 +78,7 @@ public class VirtualResourceBackendHandlerTests
         VfsEntry rootEntry = new(
                 "/",
                 VfsEntryType.Directory,
-                VfsEntryProperties.Default)
+                VfsEntryProperties.None)
         {
             Size = 0,
             LastWriteTime = DateTime.UtcNow,
@@ -88,6 +88,7 @@ public class VirtualResourceBackendHandlerTests
 
         A.CallTo(() => handler.HandleGetInfo(A<VPath>._)).Returns(A.Fake<IVfsEntry>());
         A.CallTo(() => handler.HandleGetInfo(VPath.Root)).Returns(rootEntry);
+        A.CallTo(() => handler.CanRead).Returns(true);
 
         VirtualResourceBackend backend = new();
         backend.RegisterHandler("/test", handler);
@@ -102,9 +103,10 @@ public class VirtualResourceBackendHandlerTests
     {
         IVirtualResourceHandler handler = A.Fake<IVirtualResourceHandler>();
         A.CallTo(() => handler.HandleListDirectory(A<VPath>._)).Returns([
-            new VfsEntry("/test/file1.txt", VfsEntryType.File, VfsEntryProperties.Default),
-            new VfsEntry("/test/file2.txt", VfsEntryType.File, VfsEntryProperties.Default)
+            new VfsEntry("/test/file1.txt", VfsEntryType.File, VfsEntryProperties.None),
+            new VfsEntry("/test/file2.txt", VfsEntryType.File, VfsEntryProperties.None)
         ]);
+        A.CallTo(() => handler.CanRead).Returns(true);
 
         VirtualResourceBackend backend = new();
         backend.RegisterHandler("/test", handler);

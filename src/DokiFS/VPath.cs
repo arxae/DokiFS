@@ -1,7 +1,7 @@
 namespace DokiFS;
 
 /// <summary>
-/// Provides a normalized path inside the VFS. This should only be used when accessing a pat inside the VFS.
+/// Provides a normalized path inside the VFS. This should only be used when accessing a path inside the VFS.
 /// When requiring a path that falls outside the VFS, use a string
 /// </summary>
 /// <param name="path"></param>
@@ -12,7 +12,7 @@ public readonly struct VPath : IEquatable<VPath>
 
     public const char DirectorySeparator = '/';
     public const string DirectorySeparatorString = "/";
-    public const StringComparison PathComparison = StringComparison.Ordinal;
+    const StringComparison PathComparison = StringComparison.Ordinal;
 
     public string FullPath { get; }
     public int Length => FullPath.Length;
@@ -217,6 +217,15 @@ public readonly struct VPath : IEquatable<VPath>
         int firstIndex = pathSpan.IndexOf(DirectorySeparator);
 
         if (firstIndex < 0) return FullPath;
+        // if firstIndex == 0, return the root directory
+        // eg: "/home/user/documents/file.txt" -> "/home"
+        if (firstIndex == 0)
+        {
+            int secondIndex = pathSpan[1..].IndexOf(DirectorySeparator);
+            if (secondIndex < 0) return FullPath; // No second separator, return full path
+            return pathSpan[..(secondIndex + 1)].ToString();
+        }
+
 
         return pathSpan[..firstIndex].ToString();
     }
@@ -339,7 +348,7 @@ public readonly struct VPath : IEquatable<VPath>
     /// </summary>
     /// <param name="reduction">The part of the path to reduce</param>
     /// <param name="additional">Extra characters to reduce</param>
-    /// <returns>A new path that has the reduction removed</returns>
+    /// <returns>A new VPath that has the reduction removed</returns>
     public VPath ReduceStart(VPath reduction, int additional = 0)
     {
         if (reduction.IsEmpty || reduction.IsRoot) return this;
@@ -358,6 +367,11 @@ public readonly struct VPath : IEquatable<VPath>
         return new VPath(pathSpan.ToString());
     }
 
+    /// <summary>
+    /// Removes a part of the path, starting from the end
+    /// </summary>
+    /// <param name="reduction">The part of the path to reduce</param>
+    /// <returns>A new VPath that has the reduction removed</returns>
     public VPath ReduceEnd(VPath reduction)
     {
         if (reduction.IsEmpty || reduction.IsRoot) return this;
@@ -375,6 +389,48 @@ public readonly struct VPath : IEquatable<VPath>
         return new VPath(pathSpan.ToString());
     }
 
+    /// <summary>
+    /// Expands special folder paths in the given path string such as %AppData% or ~ to it's full representation
+    /// </summary>
+    /// <param name="path">The path to expand</param>
+    /// <returns>A new path with the special folder directives expanded to the full path</returns>
+    public static string ExpandSpecialFolders(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return path;
+        }
+
+        // Handle home directory expansion for Unix-like systems
+        if (path.StartsWith('~'))
+        {
+            string homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            return path.Replace("~", homePath);
+        }
+
+        // Handle Windows environment variables like %AppData%, %ProgramFiles%, etc.
+        if (path.Contains('%', StringComparison.Ordinal))
+        {
+            return Environment.ExpandEnvironmentVariables(path);
+        }
+
+        // Handle special folder paths for common locations
+        foreach (Environment.SpecialFolder specialFolder in Enum.GetValues<Environment.SpecialFolder>())
+        {
+            string token = $"${{{specialFolder}}}";
+            if (path.Contains(token, StringComparison.OrdinalIgnoreCase))
+            {
+                string folderPath = Environment.GetFolderPath(specialFolder);
+                if (!string.IsNullOrEmpty(folderPath))
+                {
+                    path = path.Replace(token, folderPath, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+        }
+
+        return path;
+    }
+
     public override string ToString() => FullPath;
 
     public bool Equals(VPath other) => string.Equals(FullPath, other.FullPath, PathComparison);
@@ -386,7 +442,11 @@ public readonly struct VPath : IEquatable<VPath>
 
     public static VPath operator +(VPath left, VPath right) => left.Append(right);
     public static VPath operator +(VPath left, string right) => left.FullPath + right;
+    public static VPath operator +(string left, VPath right) => left + right.FullPath;
+
     public static VPath operator /(VPath left, VPath right) => left.Append(right);
+    public static VPath operator /(VPath left, string right) => left.Append(new VPath(right));
+    public static VPath operator /(string left, VPath right) => new(left + right.FullPath);
 
     public static implicit operator VPath(string path) => new(path);
     public static explicit operator string(VPath path) => path.FullPath;

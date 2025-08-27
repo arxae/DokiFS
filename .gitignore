@@ -256,5 +256,8 @@ BDN.Auto/
 .vscode/
 
 # docfx
-_site
-api
+docs/_site
+docs/api
+
+# mac os
+**/.DS_Store

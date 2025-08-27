@@ -4,18 +4,22 @@
         {
             "src": [
                 {
-                    "src": "./src",
+                    "src": "../src",
                     "files": ["**/*.csproj"]
                 }
             ],
-            "output": "api"
+            "output": "api",
+            "includePrivateMembers": false,
+            "namespaceLayout": "nested"
         }
     ],
     "build": {
         "content": [
             {
                 "files": ["**/*.{md,yml}"],
-                "exclude": ["_site/**"]
+                "exclude": [
+                    "_site/**"
+                ]
             }
         ],
         "resource": [
@@ -28,6 +32,7 @@
         "globalMetadata": {
             "_appName": "DokiFS",
             "_appTitle": "DokiFS",
+            "_appLogoPath": "images\\dokifs_small_right.png",
             "_enableSearch": true,
             "pdf": false
         }

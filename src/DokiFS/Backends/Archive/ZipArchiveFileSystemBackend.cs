@@ -17,8 +17,8 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
 
     const string NotSupportedExceptionMessage = "This operation is not supported in read-only mode.";
 
-    public ZipArchiveFileSystemBackend(string archivePath, bool autoCommit)
-        : this(archivePath, ZipArchiveMode.Read, autoCommit) { }
+    public ZipArchiveFileSystemBackend(string archivePath)
+        : this(archivePath, ZipArchiveMode.Read, false) { }
 
     public ZipArchiveFileSystemBackend(string archivePath, ZipArchiveMode mode, bool autoCommit)
     {
@@ -34,8 +34,8 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
         archive = ZipFile.Open(archivePath, mode);
     }
 
-    public UnmountResult OnUnmount() => throw new NotImplementedException();
-    public MountResult OnMount(VPath mountPoint) => throw new NotImplementedException();
+    public UnmountResult OnUnmount() => UnmountResult.Accepted;
+    public MountResult OnMount(VPath mountPoint) => MountResult.Accepted;
 
     public bool Exists(VPath path) => GetEntry(path) != null;
 
@@ -52,7 +52,7 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
         return new ArchiveEntry(
             path,
             entryType,
-            isHidden ? VfsEntryProperties.Hidden : VfsEntryProperties.Default
+            isHidden ? VfsEntryProperties.Hidden : VfsEntryProperties.None
         )
         {
             Size = entry.Length,
@@ -248,7 +248,9 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
         if (AutoCommit) Commit();
     }
 
-    public void DeleteDirectory(VPath path) => throw new NotImplementedException();
+    public void DeleteDirectory(VPath path)
+        => DeleteDirectory(path, false);
+
     public void DeleteDirectory(VPath path, bool recursive)
     {
         if (zipMode == ZipArchiveMode.Read)
@@ -287,8 +289,110 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
         if (AutoCommit) Commit();
     }
 
-    public void MoveDirectory(VPath sourcePath, VPath destinationPath) => throw new NotImplementedException();
-    public void CopyDirectory(VPath sourcePath, VPath destinationPath) => throw new NotImplementedException();
+    public void MoveDirectory(VPath sourcePath, VPath destinationPath)
+    {
+        if (zipMode == ZipArchiveMode.Read)
+        {
+            throw new NotSupportedException(NotSupportedExceptionMessage);
+        }
+
+        if (Exists(sourcePath) == false)
+        {
+            throw new DirectoryNotFoundException($"Source directory does not exist: {sourcePath}");
+        }
+
+        if (Exists(destinationPath))
+        {
+            throw new IOException($"Destination directory already exists: {destinationPath}");
+        }
+
+        // Ensure paths are treated as directories
+        if (sourcePath.IsDirectory == false)
+        {
+            sourcePath = sourcePath.Append(VPath.DirectorySeparatorString);
+        }
+
+        if (destinationPath.IsDirectory == false)
+        {
+            destinationPath = destinationPath.Append(VPath.DirectorySeparatorString);
+        }
+
+        // Get all entries that start with the source path
+        List<ZipArchiveEntry> entriesToMove = [.. archive.Entries.Where(e => e.FullName.StartsWith(sourcePath.FullPath, StringComparison.OrdinalIgnoreCase))];
+
+        // Create new entries at destination and copy content
+        foreach (ZipArchiveEntry sourceEntry in entriesToMove)
+        {
+            string relativePath = sourceEntry.FullName[sourcePath.FullPath.Length..];
+            string newPath = destinationPath.FullPath + relativePath;
+
+            ZipArchiveEntry destinationEntry = archive.CreateEntry(newPath);
+
+            if (sourceEntry.Length > 0) // Only copy content if it's not an empty directory entry
+            {
+                using Stream sourceStream = sourceEntry.Open();
+                using Stream destinationStream = destinationEntry.Open();
+                sourceStream.CopyTo(destinationStream);
+            }
+        }
+
+        // Delete original entries
+        foreach (ZipArchiveEntry entry in entriesToMove)
+        {
+            entry.Delete();
+        }
+
+        if (AutoCommit) Commit();
+    }
+
+    public void CopyDirectory(VPath sourcePath, VPath destinationPath)
+    {
+        if (zipMode == ZipArchiveMode.Read)
+        {
+            throw new NotSupportedException(NotSupportedExceptionMessage);
+        }
+
+        if (Exists(sourcePath) == false)
+        {
+            throw new DirectoryNotFoundException($"Source directory does not exist: {sourcePath}");
+        }
+
+        if (Exists(destinationPath))
+        {
+            throw new IOException($"Destination directory already exists: {destinationPath}");
+        }
+
+        // Ensure paths are treated as directories
+        if (sourcePath.IsDirectory == false)
+        {
+            sourcePath = sourcePath.Append(VPath.DirectorySeparatorString);
+        }
+        if (destinationPath.IsDirectory == false)
+        {
+            destinationPath = destinationPath.Append(VPath.DirectorySeparatorString);
+        }
+
+        // Get all entries that start with the source path
+        List<ZipArchiveEntry> entriesToCopy = [.. archive.Entries.Where(e => e.FullName.StartsWith(sourcePath.FullPath, StringComparison.OrdinalIgnoreCase))];
+
+        // Create new entries at destination and copy content
+        foreach (ZipArchiveEntry sourceEntry in entriesToCopy)
+        {
+            string relativePath = sourceEntry.FullName[sourcePath.FullPath.Length..];
+            string newPath = destinationPath.FullPath + relativePath;
+
+            ZipArchiveEntry destinationEntry = archive.CreateEntry(newPath);
+
+            if (sourceEntry.Length > 0) // Only copy content if it's not an empty directory entry
+            {
+                using Stream sourceStream = sourceEntry.Open();
+                using Stream destinationStream = destinationEntry.Open();
+                sourceStream.CopyTo(destinationStream);
+            }
+        }
+
+        if (AutoCommit) Commit();
+    }
 
     public void Commit()
     {

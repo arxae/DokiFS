@@ -293,6 +293,11 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// </summary>
     public void Commit()
     {
+        if (targetBackend == null)
+        {
+            throw new InvalidOperationException("No target backend specified for committing the journal");
+        }
+
         using JournalPlayer player = new(ListJournal(), targetBackend, false);
         player.ReplayJournal();
     }

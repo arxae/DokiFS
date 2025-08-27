@@ -59,7 +59,6 @@ public class VirtualResourceBackend : IFileSystemBackend
             return false;
         }
 
-
         // Reassemble the path without the handler name
         if (segments.Length > 1)
         {
@@ -81,6 +80,7 @@ public class VirtualResourceBackend : IFileSystemBackend
     {
         if (TryResolveHandler(path, out IVirtualResourceHandler handler, out VPath pathRemainder))
         {
+            if (handler.CanRead == false) return false;
             return handler.HandleExist(pathRemainder);
         }
 
@@ -94,7 +94,7 @@ public class VirtualResourceBackend : IFileSystemBackend
             return new VfsEntry(
                 "/",
                 VfsEntryType.Directory,
-                VfsEntryProperties.Default)
+                VfsEntryProperties.None)
             {
                 Size = 0,
                 LastWriteTime = DateTime.UtcNow,
@@ -105,6 +105,7 @@ public class VirtualResourceBackend : IFileSystemBackend
 
         if (TryResolveHandler(path, out IVirtualResourceHandler handler, out VPath pathRemainder))
         {
+            if (handler.CanRead == false) return null;
             return handler.HandleGetInfo(pathRemainder);
         }
 
@@ -141,6 +142,7 @@ public class VirtualResourceBackend : IFileSystemBackend
             return entries;
         }
 
+        if (handler.CanRead == false) return [];
         return handler.HandleListDirectory(pathRemainder);
     }
 
@@ -166,6 +168,7 @@ public class VirtualResourceBackend : IFileSystemBackend
     {
         if (TryResolveHandler(path, out IVirtualResourceHandler handler, out VPath pathRemainder))
         {
+            if (handler.CanRead == false) throw new NotAllowedToReadException();
             return handler.HandleOpenRead(pathRemainder);
         }
 
@@ -179,6 +182,7 @@ public class VirtualResourceBackend : IFileSystemBackend
     {
         if (TryResolveHandler(path, out IVirtualResourceHandler handler, out VPath pathRemainder))
         {
+            if (handler.CanWrite == false) throw new NotAllowedToWriteException();
             return handler.HandleOpenWrite(pathRemainder, mode, access);
         }
 

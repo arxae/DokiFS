@@ -64,9 +64,6 @@ public class ProcFileSystem : IVirtualResourceHandler
         return entries;
     }
 
-    public IEnumerable<IVfsEntry> HandleListDirectory(VPath path, VfsEntryType[] filter)
-        => HandleListDirectory(path);
-
     public Stream HandleOpenRead(VPath path)
     {
         if (fileProviders.TryGetValue(path, out Func<string>? contentProvider) == false)
