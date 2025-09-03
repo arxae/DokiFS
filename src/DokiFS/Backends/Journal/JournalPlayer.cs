@@ -300,7 +300,6 @@ public class JournalPlayer : IDisposable
 
         if (disposing)
         {
-            (backend as IDisposable)?.Dispose();
             originalFileContents.Clear();
         }
 
