@@ -1,306 +1,356 @@
-using System.Collections.ObjectModel;
+using System.Text.Json;
 using DokiFS.Interfaces;
 
 namespace DokiFS.Backends.Journal;
 
-/// <summary>
-/// A backend that uses a journal to track changes before being applied.
-/// </summary>
-/// <remarks>
-/// The id of the journal entries is an int, and not tracked between sessions. If the application quites without
-/// commiting the changes, then they will be lost. If changes are not committed, the backend will refuse to be unmounted.
-/// In case this backend is only used to record a journal (when the targetBackend is omitted), no commit will be needed,
-/// although it's recommended to use this backend directly
-/// </remarks>
-public class JournalFileSystemBackend : IFileSystemBackend, ICommit
+public class JournalFileSystemBackend : IFileSystemBackend
 {
+    readonly List<JournalRecord> journalRecords = [];
+    readonly Dictionary<string, Stream> openStreams = [];
+    readonly Lock journalLock = new();
+
+    readonly JsonSerializerOptions serializerOptions = new()
+    {
+        WriteIndented = true,
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+    };
+
     public BackendProperties BackendProperties => BackendProperties.Transient | BackendProperties.RequiresCommit;
 
-    readonly List<JournalEntry> journal = [];
-    readonly IFileSystemBackend targetBackend;
-
-    int currentEntryId;
-
-    /// <summary>
-    /// Instantiate without a target backend. Unable to commit changes to a backend. You can extract a journal from
-    /// this backend to use with the JournalPlayer and apply it later.
-    /// </summary>
     public JournalFileSystemBackend() { }
 
-    /// <summary>
-    /// Instantiate with a target backend. The backend will not allow itself to be unmounted without commiting the
-    /// changes of the journal
-    /// </summary>
-    /// <param name="targetBackend"></param>
-    public JournalFileSystemBackend(IFileSystemBackend targetBackend)
-    {
-        this.targetBackend = targetBackend;
-    }
-
     public MountResult OnMount(VPath mountPoint) => MountResult.Accepted;
+    public UnmountResult OnUnmount() => UnmountResult.Accepted;
 
-    // Refuse to be unmounted when there are still pending journal entries. If the targetBackend is null, then this
-    // instance was probably just used to record a journal, allow unmounting.
-    public UnmountResult OnUnmount()
-        => journal.Count > 0 && targetBackend != null
-            ? UnmountResult.UncommittedChanges
-            : UnmountResult.Accepted;
-
-    public bool Exists(VPath path)
-    {
-        IEnumerable<JournalEntry> results = ReadJournal(path)
-            .Where(e => e.ParamStack.Any(p =>
-            {
-                if (p is VPath vPath)
-                {
-                    return vPath == path;
-                }
-
-                return false;
-            }))
-            .Where(e => e.JournalAction is not JournalActions.DeleteFile);
-
-        JournalEntry last = results.LastOrDefault();
-
-        return last != null;
-    }
-
-    public IVfsEntry GetInfo(VPath path)
-    {
-        // First check if the path exists according to the journal
-        if (Exists(path) == false)
-        {
-            throw new FileNotFoundException($"Path not found within journal: '{path}'");
-        }
-
-        // Find the last create entry for this path to determine its type
-        JournalEntry createEntry = journal.LastOrDefault(e =>
-            e.JournalAction is JournalActions.CreateFile or JournalActions.CopyDirectory or JournalActions.OpenWrite
-            && e.ParamStack.Contains(path))
-        ?? throw new FileNotFoundException($"Path not found within journal: '{path}'");
-
-        // Determine if it's a file or directory
-        VfsEntryType entryType;
-        long size = 0;
-        if (createEntry.JournalAction is JournalActions.CreateFile or JournalActions.OpenWrite)
-        {
-            entryType = VfsEntryType.File;
-            // CreateFile can potentially have a parameter that includes the size. The size of the file will only
-            // be set once it has actually been created, so we are going to nab it here for display purpose
-            if (createEntry.JournalAction is JournalActions.CreateFile && createEntry.ParamStack.Length > 1)
-                size = (long)createEntry.ParamStack[1];
-        }
-        else
-        {
-            entryType = VfsEntryType.Directory;
-            size = createEntry.Data.Length;
-        }
-
-        // Create a basic VfsEntry with information from the journal
-        return new VfsEntry(path, entryType, VfsEntryProperties.Virtual)
-        {
-            FullPath = path,
-            Description = "Journal Entry",
-            FromBackend = typeof(JournalFileSystemBackend),
-            LastWriteTime = DateTime.UtcNow,
-            Size = size
-        };
-    }
-
-    public IEnumerable<IVfsEntry> ListDirectory(VPath path)
-        => ReadJournal(path)
-            .Select(e =>
-            {
-                VfsEntryType entryType;
-                long size = 0;
-                if (e.JournalAction == JournalActions.CreateFile)
-                {
-                    entryType = VfsEntryType.File;
-                    if (e.ParamStack.Length > 1) size = (long)e.ParamStack[1];
-                }
-                else
-                {
-                    entryType = VfsEntryType.Directory;
-                    size = 0;
-                }
-
-                // Create a basic VfsEntry with information from the journal
-                return new VfsEntry(path, entryType, VfsEntryProperties.Virtual)
-                {
-                    FullPath = path,
-                    Description = "Journal Entry",
-                    FromBackend = typeof(JournalFileSystemBackend),
-                    LastWriteTime = DateTime.UtcNow,
-                    Size = size
-                };
-            });
+    public bool Exists(VPath path) => throw new NotSupportedException("Query operations not supported on journal backend");
+    public IVfsEntry GetInfo(VPath path) => throw new NotSupportedException("Query operations not supported on journal backend");
+    public IEnumerable<IVfsEntry> ListDirectory(VPath path) => throw new NotSupportedException("Query operations not supported on journal backend");
 
     public void CreateFile(VPath path, long size = 0)
-        => journal.Add(new JournalEntry(NextId(), JournalActions.CreateFile, path, size));
+    {
+        JournalParameters parameters = new();
+        parameters.SetFileSize(size);
+
+        RecordEntry(new JournalRecord(JournalOperations.CreateFile, path)
+        {
+            Parameters = parameters,
+            Description = $"Create file {path} with size {size}"
+        });
+    }
 
     public void DeleteFile(VPath path)
     {
-        JournalEntry entry = new(NextId(), JournalActions.DeleteFile, path);
-
-        // Capture file contents for undo
-        if (Exists(path))
+        RecordEntry(new JournalRecord(JournalOperations.DeleteFile, path)
         {
-            using Stream stream = OpenRead(path);
-            if (stream.Length > 0)
-            {
-                entry.UndoData = new byte[stream.Length];
-                stream.ReadExactly(entry.UndoData, 0, (int)stream.Length);
-            }
-        }
-
-        journal.Add(entry);
+            Description = $"Delete file {path}"
+        });
     }
 
     public void MoveFile(VPath sourcePath, VPath destinationPath)
-        => MoveFile(sourcePath, destinationPath, false);
+        => MoveFile(sourcePath, destinationPath, true);
 
     public void MoveFile(VPath sourcePath, VPath destinationPath, bool overwrite)
     {
-        JournalEntry entry = new(NextId(), JournalActions.MoveFile, sourcePath, destinationPath, overwrite);
+        JournalParameters parameters = new();
+        parameters.SetOverwrite(overwrite);
 
-        // If overwriting, capture destination file content for undo
-        if (overwrite && Exists(destinationPath))
+        RecordEntry(new JournalRecord(JournalOperations.MoveFile, sourcePath)
         {
-            using Stream stream = OpenRead(destinationPath);
-            if (stream.Length > 0)
-            {
-                entry.UndoData = new byte[stream.Length];
-                stream.ReadExactly(entry.UndoData, 0, (int)stream.Length);
-            }
-        }
-
-        journal.Add(entry);
+            SecondaryPath = destinationPath,
+            Parameters = parameters,
+            Description = $"Move file from {sourcePath} to {destinationPath}"
+        });
     }
 
     public void CopyFile(VPath sourcePath, VPath destinationPath)
-        => CopyFile(sourcePath, destinationPath, false);
+        => CopyFile(sourcePath, destinationPath, true);
 
     public void CopyFile(VPath sourcePath, VPath destinationPath, bool overwrite)
     {
-        JournalEntry entry = new(NextId(), JournalActions.CopyFile, sourcePath, destinationPath, overwrite);
+        JournalParameters parameters = new();
+        parameters.SetOverwrite(overwrite);
 
-        // If overwriting, capture destination file content for undo
-        if (overwrite && Exists(destinationPath))
+        RecordEntry(new JournalRecord(JournalOperations.CopyFile, sourcePath)
         {
-            using Stream stream = OpenRead(destinationPath);
-            if (stream.Length > 0)
-            {
-                entry.UndoData = new byte[stream.Length];
-                stream.ReadExactly(entry.UndoData, 0, (int)stream.Length);
-            }
-        }
-
-        journal.Add(entry);
+            SecondaryPath = destinationPath,
+            Parameters = parameters,
+            Description = $"Copy file from {sourcePath} to {destinationPath}"
+        });
     }
 
-    public Stream OpenRead(VPath path)
-    {
-        // Find the last journal entry for this path, prioritizing OpenWrite operations
-        JournalEntry entry = ReadJournal(path)
-            .LastOrDefault(e => e.ParamStack.Contains(path) &&
-                (e.JournalAction == JournalActions.OpenWrite || e.JournalAction == JournalActions.CreateFile))
-            ?? throw new FileNotFoundException($"File not found in journal: {path.FullPath}");
-
-        // If the entry has data (from a MemoryCapturingStream), return it as a stream
-        if (entry.Data is { Length: > 0 })
-        {
-            return new MemoryStream(entry.Data, false);
-        }
-
-        // If the entry exists but has no data, return an empty stream
-        return new MemoryStream();
-    }
+    public Stream OpenRead(VPath path) => throw new NotSupportedException("Read operations not supported on journal backend");
 
     public Stream OpenWrite(VPath path)
         => OpenWrite(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
 
     public Stream OpenWrite(VPath path, FileMode mode, FileAccess access, FileShare share)
     {
-        JournalEntry journalEntry = new(NextId(), JournalActions.OpenWrite, path, mode, access, share);
+        JournalParameters parameters = new();
+        parameters.SetFileMode(mode);
+        parameters.SetFileAccess(access);
+        parameters.SetFileShare(share);
 
-        // Capture original file content for undo
-        if (Exists(path))
+        // Record the stream opening
+        RecordEntry(new JournalRecord(JournalOperations.OpenWrite, path)
         {
-            using Stream stream = OpenRead(path);
-            if (stream.Length > 0)
-            {
-                journalEntry.UndoData = new byte[stream.Length];
-                stream.ReadExactly(journalEntry.UndoData, 0, (int)stream.Length);
-            }
+            Parameters = parameters,
+            Description = $"Open write stream for {path}"
+        });
+
+        // Create a capturing stream that will record all writes
+        JournalCapturingStream stream = new(path, this);
+
+        lock (journalLock)
+        {
+            openStreams[path.ToString()] = stream;
         }
 
-        journal.Add(journalEntry);
-        return new MemoryCapturingStream(journalEntry);
+        return stream;
     }
 
     public void CreateDirectory(VPath path)
-        => journal.Add(new JournalEntry(NextId(), JournalActions.CreateDirectory, path));
+    {
+        RecordEntry(new JournalRecord(JournalOperations.CreateDirectory, path)
+        {
+            Description = $"Create directory {path}"
+        });
+    }
 
     public void DeleteDirectory(VPath path)
         => DeleteDirectory(path, false);
 
     public void DeleteDirectory(VPath path, bool recursive)
     {
-        // For directories, capturing the content for undo is more complex
-        // This would ideally capture the entire directory structure
-        JournalEntry entry = new(NextId(), JournalActions.DeleteDirectory, path, recursive);
-        journal.Add(entry);
+        JournalParameters parameters = new();
+        parameters.SetRecursive(recursive);
+
+        RecordEntry(new JournalRecord(JournalOperations.DeleteDirectory, path)
+        {
+            Parameters = parameters,
+            Description = $"Delete directory {path} (recursive: {recursive})"
+        });
     }
 
     public void MoveDirectory(VPath sourcePath, VPath destinationPath)
-        => journal.Add(new JournalEntry(NextId(), JournalActions.MoveDirectory, sourcePath, destinationPath));
+    {
+        JournalParameters parameters = new();
+        parameters.SetOverwrite(true); // Default to true for consistency
+
+        RecordEntry(new JournalRecord(JournalOperations.MoveDirectory, sourcePath)
+        {
+            SecondaryPath = destinationPath,
+            Parameters = parameters,
+            Description = $"Move directory from {sourcePath} to {destinationPath}"
+        });
+    }
 
     public void CopyDirectory(VPath sourcePath, VPath destinationPath)
-        => journal.Add(new JournalEntry(NextId(), JournalActions.CopyDirectory, sourcePath, destinationPath));
-
-    public void ResetJournal() => journal.Clear();
-
-    /// <summary>
-    /// Gets a readonly list of all the journal entries
-    /// </summary>
-    /// <returns>An IEnumerable of all the journal entries</returns>
-    public ReadOnlyCollection<JournalEntry> ListJournal() => journal.AsReadOnly();
-
-    /// <summary>
-    /// Returns all the journal entries that contain a specific path as a parameter
-    /// </summary>
-    /// <param name="path">The path to check</param>
-    /// <returns>An IEnumerable with all the journal entries</returns>
-    public IEnumerable<JournalEntry> ReadJournal(VPath path)
-        => journal.Where(e => e.ParamStack.Contains(path));
-
-    /// <summary>
-    /// Creates and returns the next unique journal entry ID.
-    /// </summary>
-    /// <returns></returns>
-    int NextId() => currentEntryId++;
-
-    public void SetLastEntryDescription(string description)
     {
-        if (journal.Count > 0)
+        JournalParameters parameters = new();
+        parameters.SetOverwrite(true); // Default to true for consistency
+
+        RecordEntry(new JournalRecord(JournalOperations.CopyDirectory, sourcePath)
         {
-            journal[^1].Description = description;
+            SecondaryPath = destinationPath,
+            Parameters = parameters,
+            Description = $"Copy directory from {sourcePath} to {destinationPath}"
+        });
+    }
+
+    // --- Internal methods ---
+    internal void RecordStreamWrite(VPath path, long position, byte[] data)
+    {
+        JournalParameters parameters = new();
+        parameters.SetStreamPosition(position);
+
+        // Store the actual data in the content reference
+        ContentReference contentRef = new()
+        {
+            ContentId = Guid.NewGuid().ToString(),
+            Type = ContentType.Partial,
+            Size = data.Length,
+            StreamOffset = position,
+            Length = data.Length,
+            Data = data
+        };
+
+        RecordEntry(new JournalRecord(JournalOperations.StreamWrite, path)
+        {
+            Parameters = parameters,
+            Content = contentRef,
+            Description = $"Stream write to {path} at position {position}, {data.Length} bytes"
+        });
+    }
+
+    internal void RecordStreamClose(VPath path)
+    {
+        RecordEntry(new JournalRecord(JournalOperations.CloseWriteStream, path)
+        {
+            Description = $"Close write stream for {path}"
+        });
+
+        lock (journalLock)
+        {
+            openStreams.Remove(path.ToString());
         }
     }
 
-    /// <summary>
-    /// Commits the current journal to the filesystem
-    /// </summary>
-    public void Commit()
+    void RecordEntry(JournalRecord entry)
     {
-        if (targetBackend == null)
+        lock (journalLock)
         {
-            throw new InvalidOperationException("No target backend specified for committing the journal");
+            journalRecords.Add(entry);
         }
-
-        using JournalPlayer player = new(ListJournal(), targetBackend, false);
-        player.ReplayJournal();
     }
 
-    public void Discard() => journal.Clear();
+    // Add a public method to access journal records
+    public IReadOnlyList<JournalRecord> JournalRecords
+    {
+        get
+        {
+            lock (journalLock)
+            {
+                return [.. journalRecords];
+            }
+        }
+    }
+
+    // Add a method to reconstruct file content
+    public byte[] GetFileContent(VPath path)
+    {
+        lock (journalLock)
+        {
+            List<JournalRecord> writeOperations = [.. journalRecords
+                .Where(r => r.Path == path && r.Operation == JournalOperations.StreamWrite)
+                .OrderBy(r => r.Parameters.GetStreamPosition())];
+
+            if (writeOperations.Count == 0)
+                return [];
+
+            // Reconstruct file content from stream writes
+            using MemoryStream memoryStream = new();
+            foreach (JournalRecord op in writeOperations)
+            {
+                if (op.Content?.Data != null)
+                {
+                    long position = op.Parameters.GetStreamPosition();
+                    memoryStream.Position = position;
+                    memoryStream.Write(op.Content.Data);
+                }
+            }
+
+            return memoryStream.ToArray();
+        }
+    }
+
+    public string SerializeJournal()
+    {
+        lock (journalLock)
+        {
+            return JsonSerializer.Serialize(journalRecords, serializerOptions);
+        }
+    }
+
+    public void SaveJournal(string filePath)
+    {
+        string json = SerializeJournal();
+        File.WriteAllText(filePath, json);
+    }
+}
+
+/// <summary>
+/// A stream implementation that captures all write operations and records them in the journal
+/// </summary>
+internal sealed class JournalCapturingStream : Stream
+{
+    readonly VPath path;
+    readonly JournalFileSystemBackend backend;
+    readonly MemoryStream buffer;
+    long position;
+    bool disposed;
+
+    public JournalCapturingStream(VPath path, JournalFileSystemBackend backend)
+    {
+        this.path = path;
+        this.backend = backend;
+        buffer = new MemoryStream();
+        position = 0;
+    }
+
+    public override bool CanRead => false;
+    public override bool CanSeek => true;
+    public override bool CanWrite => true;
+    public override long Length => buffer.Length;
+
+    public override long Position
+    {
+        get => position;
+        set
+        {
+            position = value;
+            if (buffer.Length < value)
+            {
+                buffer.SetLength(value);
+            }
+        }
+    }
+
+    public override void Flush() => buffer.Flush();
+
+    public override int Read(byte[] buffer, int offset, int count)
+        => throw new NotSupportedException("Read operations not supported on write-only journal stream");
+
+    public override long Seek(long offset, SeekOrigin origin)
+    {
+        switch (origin)
+        {
+            case SeekOrigin.Begin:
+                Position = offset;
+                break;
+            case SeekOrigin.Current:
+                Position += offset;
+                break;
+            case SeekOrigin.End:
+                Position = Length + offset;
+                break;
+            default:
+                Position = 0;
+                break;
+        }
+        return Position;
+    }
+
+    public override void SetLength(long value) => buffer.SetLength(value);
+
+    public override void Write(byte[] buffer, int offset, int count)
+    {
+        // Ensure buffer is large enough
+        if (position + count > this.buffer.Length)
+        {
+            this.buffer.SetLength(position + count);
+        }
+
+        // Write to our internal buffer
+        this.buffer.Position = position;
+        this.buffer.Write(buffer, offset, count);
+
+        // Record the write operation in the journal
+        byte[] data = new byte[count];
+        Array.Copy(buffer, offset, data, 0, count);
+        backend.RecordStreamWrite(path, position, data);
+
+        position += count;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposed == false && disposing)
+        {
+            backend.RecordStreamClose(path);
+            buffer.Dispose();
+            disposed = true;
+        }
+
+        base.Dispose(disposing);
+    }
 }

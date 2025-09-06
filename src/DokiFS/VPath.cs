@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using DokiFS.Internal;
+
 namespace DokiFS;
 
 /// <summary>
@@ -5,6 +8,7 @@ namespace DokiFS;
 /// When requiring a path that falls outside the VFS, use a string
 /// </summary>
 /// <param name="path"></param>
+[JsonConverter(typeof(VPathJsonConverter))]
 public readonly struct VPath : IEquatable<VPath>
 {
     public static readonly VPath Empty = new(string.Empty);
