@@ -86,6 +86,11 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// <param name="size">The initial size of the file in bytes.</param>
     public void CreateFile(VPath path, long size = 0)
     {
+        if (targetBackend != null && targetBackend.Exists(path))
+        {
+            throw new IOException($"A file or directory with the name '{path}' already exists.");
+        }
+
         RecordEntry(new JournalRecord(JournalOperations.CreateFile, parameters =>
         {
             parameters.SetSourcePath(path);
@@ -102,6 +107,19 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// <param name="path">The path of the file to delete.</param>
     public void DeleteFile(VPath path)
     {
+        if (targetBackend != null)
+        {
+            if (targetBackend.Exists(path) == false)
+            {
+                throw new FileNotFoundException($"File not found: '{path}'");
+            }
+
+            if (targetBackend.GetInfo(path).EntryType == VfsEntryType.Directory)
+            {
+                throw new IOException($"Path points to a directory: '{path}'");
+            }
+        }
+
         RecordEntry(new JournalRecord(JournalOperations.DeleteFile, parameters =>
         {
             parameters.SetSourcePath(path);
@@ -127,6 +145,24 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// <param name="overwrite">Whether to overwrite the destination file if it exists.</param>
     public void MoveFile(VPath sourcePath, VPath destinationPath, bool overwrite)
     {
+        if (targetBackend != null)
+        {
+            if (targetBackend.Exists(sourcePath) == false)
+            {
+                throw new FileNotFoundException($"Source file not found: '{sourcePath}'");
+            }
+
+            if (targetBackend.GetInfo(sourcePath).EntryType == VfsEntryType.Directory)
+            {
+                throw new IOException($"Source path is a directory: '{sourcePath}'");
+            }
+
+            if (overwrite == false && targetBackend.Exists(destinationPath))
+            {
+                throw new IOException($"Destination file already exists: '{destinationPath}'");
+            }
+        }
+
         RecordEntry(new JournalRecord(JournalOperations.MoveFile, parameters =>
         {
             parameters.SetSourcePath(sourcePath);
@@ -154,6 +190,24 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// <param name="overwrite">Whether to overwrite the destination file if it exists.</param>
     public void CopyFile(VPath sourcePath, VPath destinationPath, bool overwrite)
     {
+        if (targetBackend != null)
+        {
+            if (targetBackend.Exists(sourcePath) == false)
+            {
+                throw new FileNotFoundException($"Source file not found: '{sourcePath}'");
+            }
+
+            if (targetBackend.GetInfo(sourcePath).EntryType == VfsEntryType.Directory)
+            {
+                throw new IOException($"Source path is a directory: '{sourcePath}'");
+            }
+
+            if (overwrite == false && targetBackend.Exists(destinationPath))
+            {
+                throw new IOException($"Destination file already exists: '{destinationPath}'");
+            }
+        }
+
         RecordEntry(new JournalRecord(JournalOperations.CopyFile, parameters =>
         {
             parameters.SetSourcePath(sourcePath);
@@ -193,6 +247,20 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// </remarks>
     public Stream OpenWrite(VPath path, FileMode mode, FileAccess access, FileShare share)
     {
+        if (targetBackend != null)
+        {
+            bool exists = targetBackend.Exists(path);
+            if (mode == FileMode.CreateNew && exists)
+            {
+                throw new IOException($"File '{path}' already exists.");
+            }
+
+            if ((mode == FileMode.Open || mode == FileMode.Truncate) && !exists)
+            {
+                throw new FileNotFoundException($"File not found: '{path}'");
+            }
+        }
+
         // Record the stream opening
         RecordEntry(new JournalRecord(JournalOperations.OpenWrite, parameters =>
         {
@@ -222,6 +290,11 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// <param name="path">The path of the directory to create.</param>
     public void CreateDirectory(VPath path)
     {
+        if (targetBackend != null && targetBackend.Exists(path))
+        {
+            throw new IOException($"A file or directory with the name '{path}' already exists.");
+        }
+
         RecordEntry(new JournalRecord(JournalOperations.CreateDirectory, parameters =>
         {
             parameters.SetSourcePath(path);
@@ -245,6 +318,25 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// <param name="recursive">Whether to delete subdirectories and files.</param>
     public void DeleteDirectory(VPath path, bool recursive)
     {
+        if (targetBackend != null)
+        {
+            if (targetBackend.Exists(path) == false)
+            {
+                throw new DirectoryNotFoundException($"Directory not found: '{path}'");
+            }
+
+            IVfsEntry info = targetBackend.GetInfo(path);
+            if (info.EntryType == VfsEntryType.File)
+            {
+                throw new IOException($"Path points to a file: '{path}'");
+            }
+
+            if (recursive == false && targetBackend.ListDirectory(path).Any())
+            {
+                throw new IOException($"Directory is not empty: '{path}'");
+            }
+        }
+
         RecordEntry(new JournalRecord(JournalOperations.DeleteDirectory, parameters =>
         {
             parameters.SetSourcePath(path);
@@ -262,6 +354,29 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// <param name="destinationPath">The new path of the directory.</param>
     public void MoveDirectory(VPath sourcePath, VPath destinationPath)
     {
+        if (targetBackend != null)
+        {
+            if (targetBackend.Exists(sourcePath) == false)
+            {
+                throw new DirectoryNotFoundException($"Source directory not found: '{sourcePath}'");
+            }
+
+            if (targetBackend.GetInfo(sourcePath).EntryType != VfsEntryType.Directory)
+            {
+                throw new IOException($"Source path is not a directory: '{sourcePath}'");
+            }
+
+            if (targetBackend.Exists(destinationPath))
+            {
+                throw new IOException($"Destination directory already exists: '{destinationPath}'");
+            }
+
+            if (destinationPath.StartsWith(sourcePath))
+            {
+                throw new IOException("Cannot move a directory into itself.");
+            }
+        }
+
         RecordEntry(new JournalRecord(JournalOperations.MoveDirectory, parameters =>
         {
             parameters.SetSourcePath(sourcePath);
@@ -280,6 +395,29 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// <param name="destinationPath">The path of the destination directory.</param>
     public void CopyDirectory(VPath sourcePath, VPath destinationPath)
     {
+        if (targetBackend != null)
+        {
+            if (targetBackend.Exists(sourcePath) == false)
+            {
+                throw new DirectoryNotFoundException($"Source directory not found: '{sourcePath}'");
+            }
+
+            if (targetBackend.GetInfo(sourcePath).EntryType != VfsEntryType.Directory)
+            {
+                throw new IOException($"Source path is not a directory: '{sourcePath}'");
+            }
+
+            if (targetBackend.Exists(destinationPath))
+            {
+                throw new IOException($"Destination directory already exists: '{destinationPath}'");
+            }
+
+            if (destinationPath.StartsWith(sourcePath))
+            {
+                throw new IOException("Cannot copy a directory into itself.");
+            }
+        }
+
         RecordEntry(new JournalRecord(JournalOperations.CopyDirectory, parameters =>
         {
             parameters.SetSourcePath(sourcePath);
