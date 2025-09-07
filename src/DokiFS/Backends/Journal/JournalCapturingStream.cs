@@ -7,22 +7,42 @@ internal sealed class JournalCapturingStream : Stream
 {
     readonly VPath path;
     readonly JournalFileSystemBackend backend;
-    readonly MemoryStream buffer;
+    readonly MemoryStream internalBuffer;
     long position;
     bool disposed;
 
-    public JournalCapturingStream(VPath path, JournalFileSystemBackend backend)
+    public JournalCapturingStream(VPath path, JournalFileSystemBackend backend, FileMode mode)
     {
         this.path = path;
         this.backend = backend;
-        buffer = new MemoryStream();
-        position = 0;
+        internalBuffer = new MemoryStream();
+
+        // For modes that preserve or open existing content, load it from the journal.
+        if (mode is FileMode.Append or FileMode.Open or FileMode.OpenOrCreate)
+        {
+            byte[] initialData = backend.GetFileContent(path);
+            if (initialData.Length > 0)
+            {
+                internalBuffer.Write(initialData, 0, initialData.Length);
+            }
+        }
+        // For Truncate, Create, and CreateNew, we start with an empty buffer, which is the default.
+
+        // Set the initial position based on the mode.
+        if (mode == FileMode.Append)
+        {
+            position = internalBuffer.Length;
+        }
+        else
+        {
+            position = 0;
+        }
     }
 
     public override bool CanRead => false;
     public override bool CanSeek => true;
     public override bool CanWrite => true;
-    public override long Length => buffer.Length;
+    public override long Length => internalBuffer.Length;
 
     public override long Position
     {
@@ -30,14 +50,14 @@ internal sealed class JournalCapturingStream : Stream
         set
         {
             position = value;
-            if (buffer.Length < value)
+            if (internalBuffer.Length < value)
             {
-                buffer.SetLength(value);
+                internalBuffer.SetLength(value);
             }
         }
     }
 
-    public override void Flush() => buffer.Flush();
+    public override void Flush() => internalBuffer.Flush();
 
     public override int Read(byte[] buffer, int offset, int count)
         => throw new NotSupportedException("Read operations not supported on write-only journal stream");
@@ -56,25 +76,24 @@ internal sealed class JournalCapturingStream : Stream
                 Position = Length + offset;
                 break;
             default:
-                Position = 0;
-                break;
+                throw new ArgumentException("Invalid seek origin", nameof(origin));
         }
         return Position;
     }
 
-    public override void SetLength(long value) => buffer.SetLength(value);
+    public override void SetLength(long value) => internalBuffer.SetLength(value);
 
     public override void Write(byte[] buffer, int offset, int count)
     {
         // Ensure buffer is large enough
-        if (position + count > this.buffer.Length)
+        if (position + count > this.internalBuffer.Length)
         {
-            this.buffer.SetLength(position + count);
+            this.internalBuffer.SetLength(position + count);
         }
 
         // Write to our internal buffer
-        this.buffer.Position = position;
-        this.buffer.Write(buffer, offset, count);
+        this.internalBuffer.Position = position;
+        this.internalBuffer.Write(buffer, offset, count);
 
         // Record the write operation in the journal
         byte[] data = new byte[count];
@@ -89,7 +108,7 @@ internal sealed class JournalCapturingStream : Stream
         if (disposed == false && disposing)
         {
             backend.RecordStreamClose(path);
-            buffer.Dispose();
+            internalBuffer.Dispose();
             disposed = true;
         }
 

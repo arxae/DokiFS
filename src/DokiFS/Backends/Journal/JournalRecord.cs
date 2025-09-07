@@ -12,7 +12,7 @@ public class JournalRecord
     public string? Description { get; init; }
     public JournalOperations Operation { get; }
     public ContentReference? Content { get; init; }
-    public JournalParameters Parameters { get;  }
+    public JournalParameters Parameters { get; }
 
     [JsonConstructor]
     public JournalRecord(JournalOperations operation)

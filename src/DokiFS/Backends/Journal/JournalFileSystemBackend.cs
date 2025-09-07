@@ -17,7 +17,6 @@ namespace DokiFS.Backends.Journal;
 public class JournalFileSystemBackend : IFileSystemBackend, ICommit
 {
     readonly List<JournalRecord> journalRecords = [];
-    readonly Dictionary<string, Stream> openStreams = [];
     readonly Lock journalLock = new();
 
     readonly IFileSystemBackend? targetBackend;
@@ -255,7 +254,7 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
                 throw new IOException($"File '{path}' already exists.");
             }
 
-            if ((mode == FileMode.Open || mode == FileMode.Truncate) && !exists)
+            if (mode is FileMode.Open or FileMode.Truncate && !exists)
             {
                 throw new FileNotFoundException($"File not found: '{path}'");
             }
@@ -274,12 +273,7 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
         });
 
         // Create a capturing stream that will record all writes
-        JournalCapturingStream stream = new(path, this);
-
-        lock (journalLock)
-        {
-            openStreams[path.ToString()] = stream;
-        }
+        JournalCapturingStream stream = new(path, this, mode);
 
         return stream;
     }
@@ -493,11 +487,6 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
         {
             Description = $"Close write stream for {path}"
         });
-
-        lock (journalLock)
-        {
-            openStreams.Remove(path.ToString());
-        }
     }
 
     void RecordEntry(JournalRecord entry)
