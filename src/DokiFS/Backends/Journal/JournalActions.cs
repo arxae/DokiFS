@@ -1,7 +1,8 @@
 namespace DokiFS.Backends.Journal;
 
-public enum JournalActions
+public enum JournalOperations
 {
+    // VFS Operations
     CreateFile,
     DeleteFile,
     MoveFile,
@@ -10,5 +11,9 @@ public enum JournalActions
     CreateDirectory,
     DeleteDirectory,
     MoveDirectory,
-    CopyDirectory
+    CopyDirectory,
+
+    // Backend specific operations
+    StreamWrite,
+    CloseWriteStream,
 }
