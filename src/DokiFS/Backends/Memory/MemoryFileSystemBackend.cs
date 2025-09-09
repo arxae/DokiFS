@@ -465,10 +465,10 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
         return false;
     }
 
-    MemoryNode FindNodeInDirectory(MemoryDirectoryNode directory, string name)
+    static MemoryNode FindNodeInDirectory(MemoryDirectoryNode directory, string name)
         => directory.Children.FirstOrDefault(c => c.FullPath.GetLeaf() == name);
 
-    MemoryDirectoryNode FindDirectoryInNode(MemoryDirectoryNode directory, string name)
+    static MemoryDirectoryNode FindDirectoryInNode(MemoryDirectoryNode directory, string name)
         => directory.Children.FirstOrDefault(c => c.FullPath.GetLeaf() == name && c is MemoryDirectoryNode) as MemoryDirectoryNode;
 
     void UpdateChildPaths(MemoryDirectoryNode directory, VPath oldBasePath, VPath newBasePath)

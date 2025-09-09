@@ -349,35 +349,32 @@ public class VirtualFileSystem : IVirtualFileSystemContainer, IVfsOperations
         }
 
         // Different backends, stream the file from one to the other
-        using Stream sourceStream = sourceBackend.OpenRead(sourceBackendPath);
         FileMode writeMode = overwrite ? FileMode.Create : FileMode.CreateNew;
-        using Stream destStream = destinationBackend.OpenWrite(destinationBackendPath, writeMode, FileAccess.Write, FileShare.None);
-
-        const int bufferSize = 81920;
-        byte[] buffer = new byte[bufferSize];
-        int bytesRead;
-        long totalBytesCopied = 0;
-        while ((bytesRead = sourceStream.Read(buffer, 0, buffer.Length)) > 0)
+        using (Stream sourceStream = sourceBackend.OpenRead(sourceBackendPath))
+        using (Stream destStream = destinationBackend.OpenWrite(destinationBackendPath, writeMode, FileAccess.Write, FileShare.None))
         {
-            destStream.Write(buffer, 0, bytesRead);
-            totalBytesCopied += bytesRead;
+            const int bufferSize = 81920;
+            byte[] buffer = new byte[bufferSize];
+            int bytesRead;
+            long totalBytesCopied = 0;
+            while ((bytesRead = sourceStream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                destStream.Write(buffer, 0, bytesRead);
+                totalBytesCopied += bytesRead;
+            }
+
+            destStream.Flush();
+
+            // Verify length
+            if (sourceStream.Length != totalBytesCopied)
+            {
+                throw new IOException($"File copy failed: expected {sourceStream.Length} bytes but copied {totalBytesCopied} bytes");
+            }
         }
-
-        destStream.Flush();
-
-        // Verify length
-        if (sourceStream.Length != totalBytesCopied)
-        {
-            throw new IOException($"File copy failed: expected {sourceStream.Length} bytes but copied {totalBytesCopied} bytes");
-        }
-
 
         // If destination backend requires a commit, call it
         if (destinationBackend is ICommit commitBackend)
         {
-            // Dispose earlier in case commit also touches the files
-            sourceStream.Dispose();
-            destStream.Dispose();
             commitBackend.Commit();
         }
 
