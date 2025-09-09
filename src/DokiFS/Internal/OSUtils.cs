@@ -1,38 +1,78 @@
 using System.Diagnostics;
 using DokiFS.Exceptions;
 
-namespace DokiFS;
+namespace DokiFS.Internal;
 
-internal static class OSUtils
+/// <summary>
+/// OS Specific utilities
+/// </summary>
+public static class OSUtils
 {
     static bool lsofExists;
     static bool lsofChecked;
+    static string lsofPath;
+    static readonly List<string> lsofPaths = [
+        "/usr/bin/lsof",        // Most common location on Linux and macOS
+        "/usr/sbin/lsof",       // Alternative location (Mac)
+        "/bin/lsof"            // Alternative location
+    ];
+
+    /// <summary>
+    /// Adds a custom path to the list of locations to check for lsof.
+    /// </summary>
+    /// <param name="path"></param>
+    public static void AddLsofPath(string path)
+    {
+        if (lsofPaths.Contains(path) == false)
+        {
+            lsofPaths.Insert(0, path);
+            lsofChecked = false;
+        }
+    }
+
+    /// <summary>
+    /// Removes a custom path from the list of locations to check for lsof.
+    /// </summary>
+    /// <param name="path"></param>
+    public static void RemoveLsofPath(string path)
+    {
+        lsofPaths.Remove(path);
+        lsofChecked = false;
+    }
 
     static bool CheckLsof()
     {
         if (lsofChecked) return lsofExists;
 
-        try
+        foreach (string path in lsofPaths)
         {
-            ProcessStartInfo psi = new()
+            try
             {
-                FileName = "lsof",
-                Arguments = "-v",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
+                ProcessStartInfo psi = new()
+                {
+                    FileName = path,
+                    Arguments = "-v",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
 
-            using Process proc = Process.Start(psi);
-            if (proc == null) return false;
+                using Process proc = Process.Start(psi);
+                if (proc == null) return false;
 
-            proc.WaitForExit();
-            lsofExists = proc.ExitCode == 0;
-        }
-        catch (Exception)
-        {
-            lsofExists = false;
+                proc.WaitForExit();
+                if (proc.ExitCode == 0)
+                {
+                    lsofPath = path;
+                    lsofExists = true;
+                    break;
+                }
+            }
+            catch (Exception)
+            {
+                lsofExists = false;
+            }
         }
 
         lsofChecked = true;
@@ -49,7 +89,7 @@ internal static class OSUtils
 
         ProcessStartInfo psi = new()
         {
-            FileName = "lsof",
+            FileName = lsofPath,
             Arguments = $"-w -- \"{physicalPath}\"",
             RedirectStandardOutput = true,
             RedirectStandardError = true,

@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using DokiFS.Backends.Physical.Exceptions;
 using DokiFS.Interfaces;
+using DokiFS.Internal;
 
 namespace DokiFS.Backends.Physical;
 
