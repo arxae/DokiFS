@@ -22,16 +22,16 @@ Creating an instance allows for easy playback once the changes can be written to
 constructor available, but this will not allow to replay. This can be used as a convenient way to record a journal.
 
 ## Operations
-The backend supports all the regular `IVfsOperation` methods. Since they are only used as passthrough, the compatibility
-ultimately depends on the backend used to replay the changes:
-* Exists
-* GetInfo
-* ListDirectory
+The backend supports all the regular write `IVfsOperation` methods, but no query. Since they are only used as
+passthrough, the compatibility ultimately depends on the backend used to replay the changes.
+
+While query operations are not supported, when a target backend is configured, it will use those query methods to
+check if a recording operation would be valid (eg. It will check if a file exists before recording a `CopyFile`)
+
 * CreateFile
 * DeleteFile
 * MoveFile
 * CopyFile
-* OpenRead
 * OpenWrite
 * CreateDirectory
 * DeleteDirectory
@@ -51,7 +51,6 @@ plays back all the actions on the backend. When using the parameterless construc
 * `Discard`: This will remove all the recorded changes.
 
 ## The `JournalPlayer`
-
 The `JournalPlayer` can be used to replay a journal either step by step, or all at once. The constructor requires
 passing a journal to be played back and a target backend to perform the actions on. The requirements for the backend
 have been stated before.

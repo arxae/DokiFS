@@ -5,113 +5,82 @@ namespace DokiFS.Backends.Journal;
 /// </summary>
 internal sealed class JournalCapturingStream : Stream
 {
-    readonly VPath path;
     readonly JournalFileSystemBackend backend;
-    readonly MemoryStream internalBuffer;
-    long position;
+    readonly VPath path;
+    readonly FileMode mode;
+    readonly FileAccess access;
+    readonly FileShare share;
+    readonly MemoryStream buffer;
     bool disposed;
 
-    public JournalCapturingStream(VPath path, JournalFileSystemBackend backend, FileMode mode)
+    internal JournalCapturingStream(
+        VPath path,
+        JournalFileSystemBackend backend,
+        FileMode mode,
+        FileAccess access,
+        FileShare share,
+        byte[] baseline)
     {
         this.path = path;
         this.backend = backend;
-        internalBuffer = new MemoryStream();
+        this.mode = mode;
+        this.access = access;
+        this.share = share;
 
-        // For modes that preserve or open existing content, load it from the journal.
-        if (mode is FileMode.Append or FileMode.Open or FileMode.OpenOrCreate)
+        buffer = new MemoryStream();
+
+        if (baseline.Length > 0)
         {
-            byte[] initialData = backend.GetFileContent(path);
-            if (initialData.Length > 0)
+            buffer.Write(baseline, 0, baseline.Length);
+            if (mode == FileMode.Append)
             {
-                internalBuffer.Write(initialData, 0, initialData.Length);
+                // Position at end for Append
+                buffer.Position = buffer.Length;
             }
-        }
-        // For Truncate, Create, and CreateNew, we start with an empty buffer, which is the default.
-
-        // Set the initial position based on the mode.
-        if (mode == FileMode.Append)
-        {
-            position = internalBuffer.Length;
-        }
-        else
-        {
-            position = 0;
+            else
+            {
+                buffer.Position = 0;
+            }
         }
     }
 
     public override bool CanRead => false;
     public override bool CanSeek => true;
     public override bool CanWrite => true;
-    public override long Length => internalBuffer.Length;
+    public override long Length => buffer.Length;
 
     public override long Position
     {
-        get => position;
-        set
-        {
-            position = value;
-            if (internalBuffer.Length < value)
-            {
-                internalBuffer.SetLength(value);
-            }
-        }
+        get => buffer.Position;
+        set => buffer.Position = value;
     }
 
-    public override void Flush() => internalBuffer.Flush();
+    public override void Flush() { }
 
     public override int Read(byte[] buffer, int offset, int count)
-        => throw new NotSupportedException("Read operations not supported on write-only journal stream");
+        => throw new NotSupportedException();
 
     public override long Seek(long offset, SeekOrigin origin)
-    {
-        switch (origin)
-        {
-            case SeekOrigin.Begin:
-                Position = offset;
-                break;
-            case SeekOrigin.Current:
-                Position += offset;
-                break;
-            case SeekOrigin.End:
-                Position = Length + offset;
-                break;
-            default:
-                throw new ArgumentException("Invalid seek origin", nameof(origin));
-        }
-        return Position;
-    }
+        => buffer.Seek(offset, origin);
 
-    public override void SetLength(long value) => internalBuffer.SetLength(value);
+    public override void SetLength(long value)
+        => buffer.SetLength(value);
 
     public override void Write(byte[] buffer, int offset, int count)
-    {
-        // Ensure buffer is large enough
-        if (position + count > this.internalBuffer.Length)
-        {
-            this.internalBuffer.SetLength(position + count);
-        }
+        => this.buffer.Write(buffer, offset, count);
 
-        // Write to our internal buffer
-        this.internalBuffer.Position = position;
-        this.internalBuffer.Write(buffer, offset, count);
-
-        // Record the write operation in the journal
-        byte[] data = new byte[count];
-        Array.Copy(buffer, offset, data, 0, count);
-        backend.RecordStreamWrite(path, position, data);
-
-        position += count;
-    }
+    public override void Write(ReadOnlySpan<byte> buffer)
+        => this.buffer.Write(buffer);
 
     protected override void Dispose(bool disposing)
     {
         if (disposed == false && disposing)
         {
-            backend.RecordStreamClose(path);
-            internalBuffer.Dispose();
-            disposed = true;
+            byte[] data = buffer.ToArray();
+            backend.RecordCompletedWrite(path, mode, access, share, data);
+            buffer.Dispose();
         }
-
+        disposed = true;
         base.Dispose(disposing);
     }
 }

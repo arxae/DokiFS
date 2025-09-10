@@ -21,6 +21,20 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
 
     readonly IFileSystemBackend? targetBackend;
 
+    /// <summary>
+    /// Gets a read-only list of the recorded journal entries.
+    /// </summary>
+    public IReadOnlyList<JournalRecord> JournalRecords
+    {
+        get
+        {
+            lock (journalLock)
+            {
+                return [.. journalRecords];
+            }
+        }
+    }
+
     /// <inheritdoc />
     public BackendProperties BackendProperties => BackendProperties.Transient | BackendProperties.RequiresCommit;
 
@@ -66,17 +80,21 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// This operation is not supported by the <see cref="JournalFileSystemBackend"/>.
     /// </summary>
     /// <exception cref="NotSupportedException">This operation is not supported.</exception>
-    public bool Exists(VPath path) => throw new NotSupportedException("Query operations not supported on journal backend");
+    public bool Exists(VPath path)
+        => throw new NotSupportedException("Query operations not supported on journal backend");
+
     /// <summary>
     /// This operation is not supported by the <see cref="JournalFileSystemBackend"/>.
     /// </summary>
     /// <exception cref="NotSupportedException">This operation is not supported.</exception>
-    public IVfsEntry GetInfo(VPath path) => throw new NotSupportedException("Query operations not supported on journal backend");
+    public IVfsEntry GetInfo(VPath path)
+        => throw new NotSupportedException("Query operations not supported on journal backend");
     /// <summary>
     /// This operation is not supported by the <see cref="JournalFileSystemBackend"/>.
     /// </summary>
     /// <exception cref="NotSupportedException">This operation is not supported.</exception>
-    public IEnumerable<IVfsEntry> ListDirectory(VPath path) => throw new NotSupportedException("Query operations not supported on journal backend");
+    public IEnumerable<IVfsEntry> ListDirectory(VPath path)
+        => throw new NotSupportedException("Query operations not supported on journal backend");
 
     /// <summary>
     /// Records the creation of a file in the journal.
@@ -86,14 +104,12 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     public void CreateFile(VPath path, long size = 0)
     {
         if (targetBackend != null && targetBackend.Exists(path))
-        {
             throw new IOException($"A file or directory with the name '{path}' already exists.");
-        }
 
-        RecordEntry(new JournalRecord(JournalOperations.CreateFile, parameters =>
+        RecordEntry(new JournalRecord(JournalOperations.CreateFile, p =>
         {
-            parameters.SetSourcePath(path);
-            parameters.SetFileSize(size);
+            p.SetSourcePath(path);
+            p.SetFileSize(size);
         })
         {
             Description = $"Create file {path} with size {size}"
@@ -119,10 +135,7 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
             }
         }
 
-        RecordEntry(new JournalRecord(JournalOperations.DeleteFile, parameters =>
-        {
-            parameters.SetSourcePath(path);
-        })
+        RecordEntry(new JournalRecord(JournalOperations.DeleteFile, p => p.SetSourcePath(path))
         {
             Description = $"Delete file {path}"
         });
@@ -156,17 +169,17 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
                 throw new IOException($"Source path is a directory: '{sourcePath}'");
             }
 
-            if (overwrite == false && targetBackend.Exists(destinationPath))
+            if (overwrite && targetBackend.Exists(destinationPath) == false)
             {
                 throw new IOException($"Destination file already exists: '{destinationPath}'");
             }
         }
 
-        RecordEntry(new JournalRecord(JournalOperations.MoveFile, parameters =>
+        RecordEntry(new JournalRecord(JournalOperations.MoveFile, p =>
         {
-            parameters.SetSourcePath(sourcePath);
-            parameters.SetDestinationPath(destinationPath);
-            parameters.SetOverwrite(overwrite);
+            p.SetSourcePath(sourcePath);
+            p.SetDestinationPath(destinationPath);
+            p.SetOverwrite(overwrite);
         })
         {
             Description = $"Move file from {sourcePath} to {destinationPath}"
@@ -201,17 +214,17 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
                 throw new IOException($"Source path is a directory: '{sourcePath}'");
             }
 
-            if (overwrite == false && targetBackend.Exists(destinationPath))
+            if (overwrite && targetBackend.Exists(destinationPath) == false)
             {
                 throw new IOException($"Destination file already exists: '{destinationPath}'");
             }
         }
 
-        RecordEntry(new JournalRecord(JournalOperations.CopyFile, parameters =>
+        RecordEntry(new JournalRecord(JournalOperations.CopyFile, p =>
         {
-            parameters.SetSourcePath(sourcePath);
-            parameters.SetDestinationPath(destinationPath);
-            parameters.SetOverwrite(overwrite);
+            p.SetSourcePath(sourcePath);
+            p.SetDestinationPath(destinationPath);
+            p.SetOverwrite(overwrite);
         })
         {
             Description = $"Copy file from {sourcePath} to {destinationPath}"
@@ -250,32 +263,15 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
         {
             bool exists = targetBackend.Exists(path);
             if (mode == FileMode.CreateNew && exists)
-            {
                 throw new IOException($"File '{path}' already exists.");
-            }
-
-            if (mode is FileMode.Open or FileMode.Truncate && !exists)
-            {
+            if (mode is FileMode.Open or FileMode.Truncate && exists == false)
                 throw new FileNotFoundException($"File not found: '{path}'");
-            }
         }
 
-        // Record the stream opening
-        RecordEntry(new JournalRecord(JournalOperations.OpenWrite, parameters =>
-        {
-            parameters.SetSourcePath(path);
-            parameters.SetFileMode(mode);
-            parameters.SetFileAccess(access);
-            parameters.SetFileShare(share);
-        })
-        {
-            Description = $"Open write stream for {path}"
-        });
+        // Determine baseline content (for Append/Open/OpenOrCreate) so final entry holds entire resulting content.
+        byte[] baseline = GetBaselineContentForOpen(path, mode);
 
-        // Create a capturing stream that will record all writes
-        JournalCapturingStream stream = new(path, this, mode);
-
-        return stream;
+        return new JournalCapturingStream(path, this, mode, access, share, baseline);
     }
 
     /// <summary>
@@ -285,14 +281,9 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     public void CreateDirectory(VPath path)
     {
         if (targetBackend != null && targetBackend.Exists(path))
-        {
             throw new IOException($"A file or directory with the name '{path}' already exists.");
-        }
 
-        RecordEntry(new JournalRecord(JournalOperations.CreateDirectory, parameters =>
-        {
-            parameters.SetSourcePath(path);
-        })
+        RecordEntry(new JournalRecord(JournalOperations.CreateDirectory, p => p.SetSourcePath(path))
         {
             Description = $"Create directory {path}"
         });
@@ -302,8 +293,7 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// Records the deletion of a directory in the journal.
     /// </summary>
     /// <param name="path">The path of the directory to delete.</param>
-    public void DeleteDirectory(VPath path)
-        => DeleteDirectory(path, false);
+    public void DeleteDirectory(VPath path) => DeleteDirectory(path, false);
 
     /// <summary>
     /// Records the deletion of a directory in the journal.
@@ -331,10 +321,10 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
             }
         }
 
-        RecordEntry(new JournalRecord(JournalOperations.DeleteDirectory, parameters =>
+        RecordEntry(new JournalRecord(JournalOperations.DeleteDirectory, p =>
         {
-            parameters.SetSourcePath(path);
-            parameters.SetRecursive(recursive);
+            p.SetSourcePath(path);
+            p.SetRecursive(recursive);
         })
         {
             Description = $"Delete directory {path} (recursive: {recursive})"
@@ -371,11 +361,11 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
             }
         }
 
-        RecordEntry(new JournalRecord(JournalOperations.MoveDirectory, parameters =>
+        RecordEntry(new JournalRecord(JournalOperations.MoveDirectory, p =>
         {
-            parameters.SetSourcePath(sourcePath);
-            parameters.SetDestinationPath(destinationPath);
-            parameters.SetOverwrite(true);
+            p.SetSourcePath(sourcePath);
+            p.SetDestinationPath(destinationPath);
+            p.SetOverwrite(true);
         })
         {
             Description = $"Move directory from {sourcePath} to {destinationPath}"
@@ -412,11 +402,11 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
             }
         }
 
-        RecordEntry(new JournalRecord(JournalOperations.CopyDirectory, parameters =>
+        RecordEntry(new JournalRecord(JournalOperations.CopyDirectory, p =>
         {
-            parameters.SetSourcePath(sourcePath);
-            parameters.SetDestinationPath(destinationPath);
-            parameters.SetOverwrite(true);
+            p.SetSourcePath(sourcePath);
+            p.SetDestinationPath(destinationPath);
+            p.SetOverwrite(true);
         })
         {
             Description = $"Copy directory from {sourcePath} to {destinationPath}"
@@ -434,7 +424,7 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     {
         if (targetBackend == null)
         {
-            throw new ArgumentException("No target backend specified, commiting changes is not possibe");
+            throw new ArgumentException("No target backend specified, committing changes is not possible");
         }
 
         lock (journalLock)
@@ -454,38 +444,28 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
         }
     }
 
-    // --- Internal methods ---
-    internal void RecordStreamWrite(VPath path, long position, byte[] data)
+    internal void RecordCompletedWrite(VPath path, FileMode mode, FileAccess access, FileShare share, byte[] data)
     {
         ContentReference contentRef = new()
         {
             ContentId = Guid.NewGuid().ToString(),
-            Type = ContentType.Partial,
+            Type = ContentType.BaseContent,
             Size = data.Length,
-            StreamOffset = position,
+            StreamOffset = 0,
             Length = data.Length,
             Data = data
         };
 
-        RecordEntry(new JournalRecord(JournalOperations.StreamWrite, parameters =>
+        RecordEntry(new JournalRecord(JournalOperations.OpenWrite, p =>
         {
-            parameters.SetSourcePath(path);
-            parameters.SetStreamPosition(position);
+            p.SetSourcePath(path);
+            p.SetFileMode(mode);
+            p.SetFileAccess(access);
+            p.SetFileShare(share);
         })
         {
             Content = contentRef,
-            Description = $"Stream write to {path} at position {position}, {data.Length} bytes"
-        });
-    }
-
-    internal void RecordStreamClose(VPath path)
-    {
-        RecordEntry(new JournalRecord(JournalOperations.CloseWriteStream, parameters =>
-        {
-            parameters.SetSourcePath(path);
-        })
-        {
-            Description = $"Close write stream for {path}"
+            Description = $"Write {path} ({data.Length} bytes, mode={mode})"
         });
     }
 
@@ -497,54 +477,79 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
         }
     }
 
-    /// <summary>
-    /// Gets a read-only list of the recorded journal entries.
-    /// </summary>
-    public IReadOnlyList<JournalRecord> JournalRecords
-    {
-        get
-        {
-            lock (journalLock)
-            {
-                return [.. journalRecords];
-            }
-        }
-    }
-
-    /// <summary>
-    /// Reconstructs the content of a file by applying all recorded stream write operations.
-    /// </summary>
-    /// <param name="path">The path of the file to reconstruct.</param>
-    /// <returns>A byte array representing the file's content.</returns>
-    /// <remarks>
-    /// This method is useful for inspecting the state of a file within the journal without committing.
-    /// It only considers <see cref="JournalOperations.StreamWrite"/> operations for the given <paramref name="path"/>.
-    /// Other file operations like create or delete are not considered.
-    /// </remarks>
-    public byte[] GetFileContent(VPath path)
+    byte[] GetBaselineContentForOpen(VPath path, FileMode mode)
     {
         lock (journalLock)
         {
-            List<JournalRecord> writeOperations = [.. journalRecords
-                .Where(r => r.Parameters.GetSourcePath() == path && r.Operation == JournalOperations.StreamWrite)
-                .OrderBy(r => r.Parameters.GetStreamPosition())];
+            bool existsInJournal = HasExistingJournalFile(path, out byte[]? journalContent);
 
-            if (writeOperations.Count == 0)
-                return [];
+            bool existsInBackend = false;
+            byte[]? backendContent = null;
 
-            // Reconstruct file content from stream writes
-            using MemoryStream memoryStream = new();
-            foreach (JournalRecord op in writeOperations)
+            if (targetBackend != null)
             {
-                if (op.Content?.Data == null) continue;
-
-                long position = op.Parameters.GetStreamPosition();
-                memoryStream.Position = position;
-                memoryStream.Write(op.Content.Data);
+                try
+                {
+                    existsInBackend = targetBackend.Exists(path);
+                    if (existsInBackend)
+                    {
+                        using Stream s = targetBackend.OpenRead(path);
+                        using MemoryStream ms = new();
+                        s.CopyTo(ms);
+                        backendContent = ms.ToArray();
+                    }
+                }
+                catch
+                {
+                    // If backend read not supported, ignore.
+                }
             }
 
-            return memoryStream.ToArray();
+            bool exists = existsInJournal || existsInBackend;
+
+            return mode switch
+            {
+                FileMode.CreateNew => [],
+
+                FileMode.Create => [], // overwrite if exists
+
+                FileMode.Truncate => exists
+                    ? []
+                    : throw new FileNotFoundException($"File not found (truncate): '{path}'"),
+
+                FileMode.Open => exists
+                    ? (journalContent ?? backendContent ?? [])
+                    : throw new FileNotFoundException($"File not found: '{path}'"),
+
+                FileMode.OpenOrCreate => exists
+                    ? (journalContent ?? backendContent ?? [])
+                    : [],
+
+                FileMode.Append => exists
+                    ? (journalContent ?? backendContent ?? [])
+                    : [],
+
+                _ => []
+            };
         }
+    }
+
+    bool HasExistingJournalFile(VPath path, out byte[]? content)
+    {
+        // Look for last OpenWrite entry with data
+        JournalRecord? last = journalRecords
+            .LastOrDefault(r => r.Operation == JournalOperations.OpenWrite &&
+                        r.Parameters.GetSourcePath() == path &&
+                        r.Content?.Data != null);
+
+        if (last != null)
+        {
+            content = last.Content!.Data!;
+            return true;
+        }
+
+        content = null;
+        return false;
     }
 
     /// <summary>

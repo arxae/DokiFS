@@ -7,14 +7,29 @@ namespace DokiFS.Backends.Journal;
 
 public class JournalRecord
 {
-    public Guid Id { get; } = Guid.NewGuid();
-    public DateTimeOffset Timestamp { get; } = DateTimeOffset.UtcNow;
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
     public string? Description { get; init; }
-    public JournalOperations Operation { get; }
+    public JournalOperations Operation { get; init; }
     public ContentReference? Content { get; init; }
-    public JournalParameters Parameters { get; }
+    public JournalParameters Parameters { get; init; }
 
     [JsonConstructor]
+    public JournalRecord(Guid id,
+                        DateTimeOffset timestamp,
+                        string? description,
+                        JournalOperations operation,
+                        ContentReference? content,
+                        JournalParameters? parameters)
+    {
+        Id = id;
+        Timestamp = timestamp;
+        Description = description;
+        Operation = operation;
+        Content = content;
+        Parameters = parameters ?? new JournalParameters();
+    }
+
     public JournalRecord(JournalOperations operation)
     {
         Operation = operation;
@@ -40,42 +55,103 @@ public class JournalRecord
 
 public class JournalParameters
 {
+    static readonly JsonSerializerOptions EnumJsonOptions = JournalSerializerOptions.GetDefault();
+
     public object? this[string key]
     {
-        get => propertyStorage.GetValueOrDefault(key);
+        get => PropertyStorage.GetValueOrDefault(key);
         set
         {
             if (value == null)
-            {
-                propertyStorage.Remove(key);
-            }
+                PropertyStorage.Remove(key);
             else
-            {
-                propertyStorage[key] = value;
-            }
+                PropertyStorage[key] = value;
         }
     }
 
     public T? Get<T>(string key)
     {
-        if (propertyStorage.TryGetValue(key, out object? value) == false)
+        if (PropertyStorage.TryGetValue(key, out object? value) == false)
         {
             return default;
         }
 
-        return value switch
+        // Already correct type
+        if (value is T typed)
         {
-            T typedValue => typedValue,
-            JsonElement jsonElement => jsonElement.Deserialize<T>(),
-            _ => (T?)Convert.ChangeType(value, typeof(T))
-        };
+            return typed;
+        }
+
+        Type targetType = typeof(T);
+
+        if (value is JsonElement je)
+        {
+            return ConvertFromJsonElement<T>(je);
+        }
+
+        // Enum conversions (string / numeric / boxed)
+        if (targetType.IsEnum)
+        {
+            return (T?)ConvertEnum(targetType, value);
+        }
+
+        // Fallback
+        return (T?)Convert.ChangeType(value, targetType);
     }
 
     public void Set<T>(string key, T value) => this[key] = value;
-    public bool Contains(string key) => propertyStorage.ContainsKey(key);
+    public bool Contains(string key) => PropertyStorage.ContainsKey(key);
 
     [JsonExtensionData]
-    Dictionary<string, object> propertyStorage { get; set; } = [];
+    public Dictionary<string, object> PropertyStorage { get; set; } = [];
+
+    static T? ConvertFromJsonElement<T>(JsonElement je)
+    {
+        Type targetType = typeof(T);
+
+        if (targetType.IsEnum)
+        {
+            if (je.ValueKind == JsonValueKind.String)
+            {
+                return (T)Enum.Parse(targetType, je.GetString()!, ignoreCase: true);
+            }
+
+            if (je.ValueKind == JsonValueKind.Number && je.TryGetInt32(out int enumInt))
+            {
+                return (T)Enum.ToObject(targetType, enumInt);
+            }
+        }
+
+        return je.Deserialize<T>(EnumJsonOptions);
+    }
+
+    static object? ConvertEnum(Type enumType, object value)
+    {
+        switch (value)
+        {
+            case string s:
+                return Enum.Parse(enumType, s, ignoreCase: true);
+            case JsonElement je:
+                // (Normally handled earlier, but kept for completeness)
+                if (je.ValueKind == JsonValueKind.String)
+                    return Enum.Parse(enumType, je.GetString()!, ignoreCase: true);
+                if (je.ValueKind == JsonValueKind.Number && je.TryGetInt32(out int enumInt))
+                    return Enum.ToObject(enumType, enumInt);
+                break;
+            case IConvertible conv:
+                return Enum.ToObject(enumType, conv.ToInt32(null));
+            default:
+                break;
+        }
+
+        // Fallback: try direct
+        if (Enum.IsDefined(enumType, value))
+        {
+            return value;
+        }
+
+        throw new InvalidCastException($"Cannot convert value '{value}' to enum {enumType.Name}.");
+    }
 }
 
 public sealed class ContentReference

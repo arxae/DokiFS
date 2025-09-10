@@ -91,15 +91,18 @@ public static class JournalPlayer
                 break;
 
             case JournalOperations.OpenWrite:
-                // Stream opening doesn't need replay - we'll handle the actual writes
+                // New format: a single OpenWrite record with full file content (if Content present)
+                if (record.Content?.Data != null)
+                    ReplayFullOpenWrite(record, targetBackend);
                 break;
 
             case JournalOperations.StreamWrite:
+                // Legacy multi-record write support
                 ReplayStreamWrite(record, targetBackend);
                 break;
 
             case JournalOperations.CloseWriteStream:
-                // Stream closing doesn't need special handling
+                // Legacy close marker (no action)
                 break;
             default:
                 throw new NotSupportedException($"Unknown journal operation: {record.Operation}");
@@ -179,6 +182,49 @@ public static class JournalPlayer
         long position = record.Parameters.GetStreamPosition();
         stream.Position = position;
         stream.Write(record.Content.Data);
+    }
+
+    // New: replay a full-content OpenWrite entry (single-entry write model)
+    static void ReplayFullOpenWrite(JournalRecord record, IFileSystemBackend targetBackend)
+    {
+        VPath path = record.Parameters.GetSourcePath();
+        byte[] data = record.Content!.Data!;
+
+        FileMode fileMode = record.Parameters.GetFileMode();
+        FileAccess fileAccess = record.Parameters.GetFileAccess();
+        FileShare fileShare = record.Parameters.GetFileShare();
+
+        if (fileMode == 0) fileMode = FileMode.OpenOrCreate;
+        if (fileAccess == 0) fileAccess = FileAccess.Write;
+        if (fileShare == 0) fileShare = FileShare.None;
+
+        // Preserve CreateNew semantics strictly
+        if (fileMode == FileMode.Open && !targetBackend.Exists(path))
+            throw new FileNotFoundException($"Replay expected existing file (Open): {path}");
+
+        // We have the final full content; easiest is to (re)create/truncate the file regardless of original mode
+        FileMode replayMode = fileMode switch
+        {
+            FileMode.CreateNew => FileMode.CreateNew,
+            FileMode.Create => FileMode.Create,
+            FileMode.Truncate => FileMode.Create,        // final content replaces previous
+            FileMode.Append => FileMode.OpenOrCreate,    // we'll truncate then write full content
+            FileMode.Open => FileMode.Create,            // replace with final state
+            FileMode.OpenOrCreate => FileMode.Create,    // replace with final state
+            _ => FileMode.Create
+        };
+
+        using Stream stream = targetBackend.OpenWrite(path, replayMode, fileAccess, fileShare);
+
+        // Truncate for modes that may not inherently truncate (OpenOrCreate / OpenOrCreate via mapping)
+        if (replayMode is FileMode.OpenOrCreate or FileMode.Create && stream.CanSeek)
+        {
+            stream.SetLength(0);
+        }
+
+        stream.Position = 0;
+        stream.Write(data, 0, data.Length);
+        stream.Flush();
     }
 }
 
