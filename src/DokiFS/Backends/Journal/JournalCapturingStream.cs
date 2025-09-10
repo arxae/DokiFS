@@ -10,7 +10,7 @@ internal sealed class JournalCapturingStream : Stream
     readonly FileMode mode;
     readonly FileAccess access;
     readonly FileShare share;
-    readonly MemoryStream buffer;
+    readonly MemoryStream internalBuffer;
     bool disposed;
 
     internal JournalCapturingStream(
@@ -27,32 +27,27 @@ internal sealed class JournalCapturingStream : Stream
         this.access = access;
         this.share = share;
 
-        buffer = new MemoryStream();
+        internalBuffer = new MemoryStream();
 
         if (baseline.Length > 0)
         {
-            buffer.Write(baseline, 0, baseline.Length);
-            if (mode == FileMode.Append)
-            {
-                // Position at end for Append
-                buffer.Position = buffer.Length;
-            }
-            else
-            {
-                buffer.Position = 0;
-            }
+            internalBuffer.Write(baseline, 0, baseline.Length);
+            // Position at end for Append
+            internalBuffer.Position = mode == FileMode.Append
+                ? internalBuffer.Length
+                : 0;
         }
     }
 
     public override bool CanRead => false;
     public override bool CanSeek => true;
     public override bool CanWrite => true;
-    public override long Length => buffer.Length;
+    public override long Length => internalBuffer.Length;
 
     public override long Position
     {
-        get => buffer.Position;
-        set => buffer.Position = value;
+        get => internalBuffer.Position;
+        set => internalBuffer.Position = value;
     }
 
     public override void Flush() { }
@@ -61,24 +56,24 @@ internal sealed class JournalCapturingStream : Stream
         => throw new NotSupportedException();
 
     public override long Seek(long offset, SeekOrigin origin)
-        => buffer.Seek(offset, origin);
+        => internalBuffer.Seek(offset, origin);
 
     public override void SetLength(long value)
-        => buffer.SetLength(value);
+        => internalBuffer.SetLength(value);
 
     public override void Write(byte[] buffer, int offset, int count)
-        => this.buffer.Write(buffer, offset, count);
+        => this.internalBuffer.Write(buffer, offset, count);
 
     public override void Write(ReadOnlySpan<byte> buffer)
-        => this.buffer.Write(buffer);
+        => this.internalBuffer.Write(buffer);
 
     protected override void Dispose(bool disposing)
     {
         if (disposed == false && disposing)
         {
-            byte[] data = buffer.ToArray();
+            byte[] data = internalBuffer.ToArray();
             backend.RecordCompletedWrite(path, mode, access, share, data);
-            buffer.Dispose();
+            internalBuffer.Dispose();
         }
         disposed = true;
         base.Dispose(disposing);

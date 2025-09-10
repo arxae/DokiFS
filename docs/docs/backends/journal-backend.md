@@ -28,6 +28,9 @@ passthrough, the compatibility ultimately depends on the backend used to replay 
 While query operations are not supported, when a target backend is configured, it will use those query methods to
 check if a recording operation would be valid (eg. It will check if a file exists before recording a `CopyFile`)
 
+The `ForwardQueriesToTargetBackend` property can be set to true to forward the query calls to the target backend.
+However, setting this property to true when no target backend is defined will throw an exception
+
 * CreateFile
 * DeleteFile
 * MoveFile

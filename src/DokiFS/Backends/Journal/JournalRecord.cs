@@ -125,7 +125,7 @@ public class JournalParameters
         return je.Deserialize<T>(EnumJsonOptions);
     }
 
-    static object? ConvertEnum(Type enumType, object value)
+    static object ConvertEnum(Type enumType, object value)
     {
         switch (value)
         {
@@ -140,8 +140,6 @@ public class JournalParameters
                 break;
             case IConvertible conv:
                 return Enum.ToObject(enumType, conv.ToInt32(null));
-            default:
-                break;
         }
 
         // Fallback: try direct

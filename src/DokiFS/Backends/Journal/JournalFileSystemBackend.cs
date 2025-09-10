@@ -9,7 +9,7 @@ namespace DokiFS.Backends.Journal;
 /// A backend that uses a journal to track changes before being applied.
 /// </summary>
 /// <remarks>
-/// If the application quites without commiting the changes, then they will be lost. If changes are not committed,
+/// If the application quits without committing the changes, then they will be lost. If changes are not committed,
 /// the backend will refuse to be unmounted. In case this backend is only used to record a journal
 /// (when the targetBackend is omitted), no commit will be needed
 /// Query operations (Exists, GetInfo and ListDirectory) are not supported.
@@ -18,8 +18,23 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
 {
     readonly List<JournalRecord> journalRecords = [];
     readonly Lock journalLock = new();
-
     readonly IFileSystemBackend? targetBackend;
+
+    bool forwardQueries;
+    /// <summary>
+    /// When true and a target backend is configured, query operations (Exists, GetInfo, ListDirectory)
+    /// are forwarded to the target backend. Cannot be enabled without a target backend.
+    /// </summary>
+    public bool ForwardQueriesToTargetBackend
+    {
+        get => forwardQueries;
+        set
+        {
+            if (value && targetBackend == null)
+                throw new InvalidOperationException("Cannot enable query forwarding: no target backend configured.");
+            forwardQueries = value;
+        }
+    }
 
     /// <summary>
     /// Gets a read-only list of the recorded journal entries.
@@ -48,6 +63,7 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// </remarks>
     public JournalFileSystemBackend()
     {
+
     }
 
     /// <summary>
@@ -81,20 +97,33 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// </summary>
     /// <exception cref="NotSupportedException">This operation is not supported.</exception>
     public bool Exists(VPath path)
-        => throw new NotSupportedException("Query operations not supported on journal backend");
+    {
+        if (targetBackend != null && forwardQueries)
+            return targetBackend.Exists(path);
+        throw new NotSupportedException("Query operations not supported on journal backend (ForwardQueriesToTargetBackend is false).");
+    }
 
     /// <summary>
     /// This operation is not supported by the <see cref="JournalFileSystemBackend"/>.
     /// </summary>
     /// <exception cref="NotSupportedException">This operation is not supported.</exception>
     public IVfsEntry GetInfo(VPath path)
-        => throw new NotSupportedException("Query operations not supported on journal backend");
+    {
+        if (targetBackend != null && forwardQueries)
+            return targetBackend.GetInfo(path);
+        throw new NotSupportedException("Query operations not supported on journal backend (ForwardQueriesToTargetBackend is false).");
+    }
+
     /// <summary>
     /// This operation is not supported by the <see cref="JournalFileSystemBackend"/>.
     /// </summary>
     /// <exception cref="NotSupportedException">This operation is not supported.</exception>
     public IEnumerable<IVfsEntry> ListDirectory(VPath path)
-        => throw new NotSupportedException("Query operations not supported on journal backend");
+    {
+        if (targetBackend != null && forwardQueries)
+            return targetBackend.ListDirectory(path);
+        throw new NotSupportedException("Query operations not supported on journal backend (ForwardQueriesToTargetBackend is false).");
+    }
 
     /// <summary>
     /// Records the creation of a file in the journal.
@@ -169,7 +198,7 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
                 throw new IOException($"Source path is a directory: '{sourcePath}'");
             }
 
-            if (overwrite && targetBackend.Exists(destinationPath) == false)
+            if (overwrite == false && targetBackend.Exists(destinationPath))
             {
                 throw new IOException($"Destination file already exists: '{destinationPath}'");
             }
@@ -214,7 +243,7 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
                 throw new IOException($"Source path is a directory: '{sourcePath}'");
             }
 
-            if (overwrite && targetBackend.Exists(destinationPath) == false)
+            if (overwrite == false && targetBackend.Exists(destinationPath))
             {
                 throw new IOException($"Destination file already exists: '{destinationPath}'");
             }
@@ -337,40 +366,7 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// <param name="sourcePath">The original path of the directory.</param>
     /// <param name="destinationPath">The new path of the directory.</param>
     public void MoveDirectory(VPath sourcePath, VPath destinationPath)
-    {
-        if (targetBackend != null)
-        {
-            if (targetBackend.Exists(sourcePath) == false)
-            {
-                throw new DirectoryNotFoundException($"Source directory not found: '{sourcePath}'");
-            }
-
-            if (targetBackend.GetInfo(sourcePath).EntryType != VfsEntryType.Directory)
-            {
-                throw new IOException($"Source path is not a directory: '{sourcePath}'");
-            }
-
-            if (targetBackend.Exists(destinationPath))
-            {
-                throw new IOException($"Destination directory already exists: '{destinationPath}'");
-            }
-
-            if (destinationPath.StartsWith(sourcePath))
-            {
-                throw new IOException("Cannot move a directory into itself.");
-            }
-        }
-
-        RecordEntry(new JournalRecord(JournalOperations.MoveDirectory, p =>
-        {
-            p.SetSourcePath(sourcePath);
-            p.SetDestinationPath(destinationPath);
-            p.SetOverwrite(true);
-        })
-        {
-            Description = $"Move directory from {sourcePath} to {destinationPath}"
-        });
-    }
+        => MoveOrCopyDirectory(MoveOrCopyDirectoryOperations.Move, sourcePath, destinationPath);
 
     /// <summary>
     /// Records the copy of a directory in the journal.
@@ -378,6 +374,10 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     /// <param name="sourcePath">The path of the directory to copy.</param>
     /// <param name="destinationPath">The path of the destination directory.</param>
     public void CopyDirectory(VPath sourcePath, VPath destinationPath)
+        => MoveOrCopyDirectory(MoveOrCopyDirectoryOperations.Copy, sourcePath, destinationPath);
+
+    enum MoveOrCopyDirectoryOperations { Move, Copy }
+    void MoveOrCopyDirectory(MoveOrCopyDirectoryOperations directoryOperation, VPath sourcePath, VPath destinationPath)
     {
         if (targetBackend != null)
         {
@@ -402,14 +402,22 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
             }
         }
 
-        RecordEntry(new JournalRecord(JournalOperations.CopyDirectory, p =>
+        JournalOperations journalOperation = directoryOperation == MoveOrCopyDirectoryOperations.Copy
+            ? JournalOperations.CopyDirectory
+            : JournalOperations.MoveDirectory;
+
+        string description = journalOperation == JournalOperations.CopyDirectory
+            ? $"Copy directory from {sourcePath} to {destinationPath}"
+            : $"Move directory from {sourcePath} to {destinationPath}";
+
+        RecordEntry(new JournalRecord(journalOperation, p =>
         {
             p.SetSourcePath(sourcePath);
             p.SetDestinationPath(destinationPath);
             p.SetOverwrite(true);
         })
         {
-            Description = $"Copy directory from {sourcePath} to {destinationPath}"
+            Description = description
         });
     }
 
@@ -429,7 +437,7 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
 
         lock (journalLock)
         {
-            JournalPlayer.Replay(this, this);
+            JournalPlayer.Replay(this, targetBackend);
         }
     }
 
@@ -518,15 +526,15 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
                     : throw new FileNotFoundException($"File not found (truncate): '{path}'"),
 
                 FileMode.Open => exists
-                    ? (journalContent ?? backendContent ?? [])
+                    ? journalContent ?? backendContent ?? []
                     : throw new FileNotFoundException($"File not found: '{path}'"),
 
                 FileMode.OpenOrCreate => exists
-                    ? (journalContent ?? backendContent ?? [])
+                    ? journalContent ?? backendContent ?? []
                     : [],
 
                 FileMode.Append => exists
-                    ? (journalContent ?? backendContent ?? [])
+                    ? journalContent ?? backendContent ?? []
                     : [],
 
                 _ => []

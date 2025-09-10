@@ -13,6 +13,7 @@ public static class JournalPlayer
     /// Replays all journal records on the target backend
     /// </summary>
     /// <param name="journalRecords">The journal records to replay</param>
+    /// <param name="targetBackend">The backend to replay the changes to</param>
     /// <exception cref="InvalidOperationException">When an operation cannot be replayed</exception>
     public static void Replay(IEnumerable<JournalRecord> journalRecords, IFileSystemBackend targetBackend)
     {
@@ -37,6 +38,7 @@ public static class JournalPlayer
     /// Replays journal records from a journal backend
     /// </summary>
     /// <param name="journalBackend">The journal backend containing the records</param>
+    /// <param name="targetBackend">The backend to replay the changes to</param>
     public static void Replay(JournalFileSystemBackend journalBackend, IFileSystemBackend targetBackend)
         => Replay(journalBackend.JournalRecords, targetBackend);
 
