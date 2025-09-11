@@ -32,7 +32,7 @@ public class AssemblyResourceFileSystemBackend : IFileSystemBackend, IDisposable
             throw new FileNotFoundException("The assembly file was not found.", assemblyPath);
         }
 
-        resourcePathPrefix = rootResourcePath;
+        resourcePathPrefix = rootResourcePath?.TrimEnd('.') ?? string.Empty;
 
         try
         {
@@ -50,8 +50,11 @@ public class AssemblyResourceFileSystemBackend : IFileSystemBackend, IDisposable
 
     public void UnloadAssembly()
     {
-        fileIndex.Clear();
-        loadContext.Unload();
+        lock (cacheLock)
+        {
+            fileIndex.Clear();
+            loadContext.Unload();
+        }
     }
 
     public void Index()
@@ -93,9 +96,8 @@ public class AssemblyResourceFileSystemBackend : IFileSystemBackend, IDisposable
                     log.LogError(ex, "Failed to get resource stream for {ResourceName}", fullResourceName);
                 }
 
-                AssemblyFile file = new(resourcePath)
+                AssemblyFile file = new(resourcePath, fullResourceName)
                 {
-                    ResourcePath = fullResourceName,
                     EntryType = VfsEntryType.Virtual,
                     Properties = VfsEntryProperties.Readonly,
                     Size = fileSize,
@@ -109,7 +111,10 @@ public class AssemblyResourceFileSystemBackend : IFileSystemBackend, IDisposable
         }
     }
 
-    public MountResult OnMount(VPath mountPoint) => isAssemblyLoaded ? MountResult.Accepted : MountResult.ResourceUnavailable;
+    public MountResult OnMount(VPath mountPoint)
+        => isAssemblyLoaded
+            ? MountResult.Accepted
+            : MountResult.ResourceUnavailable;
 
     public UnmountResult OnUnmount()
     {
@@ -130,25 +135,38 @@ public class AssemblyResourceFileSystemBackend : IFileSystemBackend, IDisposable
     /// <returns>An IEnumerable of the entries</returns>
     public IEnumerable<IVfsEntry> ListDirectory(VPath path)
     {
+        ObjectDisposedException.ThrowIf(disposed, this);
+
         if (isAssemblyLoaded == false)
         {
             throw new IOException("The assembly file was not loaded.");
         }
 
-        return fileIndex.Select(c => c.Value);
+        lock (cacheLock)
+        {
+            return fileIndex.Select(c => c.Value);
+        }
     }
 
     public Stream OpenRead(VPath path)
     {
-        AssemblyFile entry = fileIndex.GetValueOrDefault(path)
-            ?? throw new FileNotFoundException($"Failed to find the resource file {path}.");
+        ObjectDisposedException.ThrowIf(disposed, this);
+
+        if (fileIndex.TryGetValue(path, out AssemblyFile entry) == false)
+        {
+            throw new FileNotFoundException($"Failed to find the resource file {path}.");
+        }
 
         try
         {
-            return loadContext.Assemblies.FirstOrDefault()?
-                .GetManifestResourceStream(entry.ResourcePath);
+            System.Reflection.Assembly assembly = loadContext.Assemblies.FirstOrDefault()
+                ?? throw new IOException("Assembly already unloaded.");
+
+            Stream s = assembly.GetManifestResourceStream(entry.ResourcePath)
+                ?? throw new FileNotFoundException($"Embedded resource stream not found for {path} ({entry.ResourcePath}).");
+            return s;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not FileNotFoundException)
         {
             throw new IOException($"Failed to open resource stream for {path}", ex);
         }
