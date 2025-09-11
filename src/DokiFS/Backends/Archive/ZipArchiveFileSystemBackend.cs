@@ -56,7 +56,7 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
         )
         {
             Size = entry.Length,
-            LastWriteTime = entry.LastWriteTime.DateTime,
+            LastWriteTime = entry.LastWriteTime.UtcDateTime,
             FromBackend = GetType(),
             Description = entryType == VfsEntryType.Directory ? "ZIP Folder" : "Zip File"
         };
@@ -64,14 +64,55 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
 
     public IEnumerable<IVfsEntry> ListDirectory(VPath path)
     {
-        string alt = path.FullPath.EndsWith('/')
-            ? path.FullPath.Replace('/', '\\')
-            : path.FullPath.Replace('\\', '/');
+        // Return only immediate children (files or directories) of the specified directory
+        string dirPrefix = path.FullPath;
+        if (dirPrefix.EndsWith('/') == false)
+        {
+            dirPrefix += '/';
+        }
 
-        return archive.Entries
-            .Where(e => e.FullName.StartsWith(path.FullPath, StringComparison.OrdinalIgnoreCase)
-                || e.FullName.Equals(alt, StringComparison.OrdinalIgnoreCase))
-            .Select(e => GetInfo(e.FullName));
+        Dictionary<string, IVfsEntry> children = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (ZipArchiveEntry entry in archive.Entries)
+        {
+            if (!entry.FullName.StartsWith(dirPrefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            string remainder = entry.FullName[dirPrefix.Length..];
+            if (remainder.Length == 0)
+            {
+                continue;
+            }
+
+            int slashIndex = remainder.IndexOf('/');
+            if (slashIndex >= 0)
+            {
+                // Immediate directory child
+                string childDirSegment = remainder[..(slashIndex + 1)];
+                string childDirFull = dirPrefix + childDirSegment;
+                if (!children.ContainsKey(childDirFull))
+                {
+                    VPath childDirPath = new(childDirFull);
+                    children[childDirFull] = new ArchiveEntry(childDirPath, VfsEntryType.Directory)
+                    {
+                        Size = 0,
+                        LastWriteTime = entry.LastWriteTime.UtcDateTime,
+                        FromBackend = GetType(),
+                        Description = "ZIP Folder"
+                    };
+                }
+            }
+            else
+            {
+                string childFileFull = dirPrefix + remainder;
+                if (!children.ContainsKey(childFileFull))
+                {
+                    children[childFileFull] = GetInfo(new VPath(childFileFull));
+                }
+            }
+        }
+
+        return children.Values;
     }
 
     public void CreateFile(VPath path, long size = 0)
@@ -129,7 +170,7 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
             throw new NotSupportedException(NotSupportedExceptionMessage);
 
         if (Exists(sourcePath) == false)
-            throw new FileNotFoundException($"File does not exists: {sourcePath}");
+            throw new IOException($"File does not exists: {sourcePath}");
 
         if (Exists(destinationPath))
         {
@@ -166,7 +207,7 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
             throw new NotSupportedException(NotSupportedExceptionMessage);
 
         if (Exists(sourcePath) == false)
-            throw new FileNotFoundException($"File does exists: {sourcePath}");
+            throw new FileNotFoundException($"File does not exists: {sourcePath}");
 
         if (Exists(destinationPath))
         {
@@ -208,15 +249,48 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
         if (zipMode == ZipArchiveMode.Read)
             throw new NotSupportedException(NotSupportedExceptionMessage);
 
-        ZipArchiveEntry entry = GetEntry(path) ?? archive.CreateEntry(path.FullPath);
+        bool exists = Exists(path);
 
-        if (mode == FileMode.Truncate)
+        switch (mode)
         {
-            entry.Delete();
-            entry = archive.CreateEntry(path.FullPath);
+            case FileMode.CreateNew:
+                if (exists) throw new IOException($"File already exists: {path}");
+                break;
+            case FileMode.Create:
+                if (exists) DeleteFile(path);
+                break;
+            case FileMode.Open:
+                if (exists == false) throw new FileNotFoundException($"File does not exist: {path}");
+                break;
+            case FileMode.Truncate:
+                if (exists == false) throw new FileNotFoundException($"File does not exist: {path}");
+                DeleteFile(path);
+                break;
+            case FileMode.Append:
+                // ZIP entries do not support true append; emulate by extracting, buffering, rewriting.
+                if (exists == false) throw new FileNotFoundException($"File does not exist: {path}");
+                return OpenAppendEmulated(path);
+            case FileMode.OpenOrCreate:
+            default:
+                break;
         }
 
+        ZipArchiveEntry entry = GetEntry(path) ?? archive.CreateEntry(path.FullPath);
         return entry.Open();
+    }
+
+    Stream OpenAppendEmulated(VPath path)
+    {
+        ZipArchiveEntry existing = GetEntry(path);
+        using MemoryStream buffer = new();
+        using (Stream rs = existing.Open()) rs.CopyTo(buffer);
+        byte[] existingBytes = buffer.ToArray();
+        existing.Delete();
+        ZipArchiveEntry recreated = archive.CreateEntry(path.FullPath);
+        Stream ws = recreated.Open();
+        ws.Write(existingBytes, 0, existingBytes.Length);
+
+        return ws;
     }
 
     public void CreateDirectory(VPath path)

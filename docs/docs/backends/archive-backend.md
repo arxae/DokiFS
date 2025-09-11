@@ -23,7 +23,7 @@ ZipArchiveFileSystemBackend backend = new("path/to/archive.zip", ZipArchiveMode.
 ```
 
 The zip archive backend internally uses the default `ZipArchive` class from dotnet. Due to the way this class works,
-changes are only written after commiting the changes. This can be done by calling the `Commit` method.
+changes are only written after committing the changes. This can be done by calling the `Commit` method.
 
 *Note:* While there is a `Discard` method present due to the `ICommit` interface, this method doesn't actually
 discard any changes. Due to the way the `ZipArchive` class works, once the instance is disposed, the changes are
