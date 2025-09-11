@@ -2,8 +2,30 @@ namespace DokiFS.Backends.Memory.Nodes;
 
 public class MemoryDirectoryNode : MemoryNode, IDisposable
 {
-    public List<MemoryNode> Children { get; } = [];
+    // Name (leaf) -> node
+    private readonly Dictionary<string, MemoryNode> _children = new(StringComparer.Ordinal);
+
     bool disposed;
+    readonly Lock sync = new();
+
+    public IReadOnlyCollection<MemoryNode> Children
+    {
+        get
+        {
+            lock (sync)
+            {
+                return [.. _children.Values];
+            }
+        }
+    }
+
+    public int ChildCount
+    {
+        get
+        {
+            lock (sync) return _children.Count;
+        }
+    }
 
     public MemoryDirectoryNode(VPath path)
     {
@@ -17,43 +39,99 @@ public class MemoryDirectoryNode : MemoryNode, IDisposable
 
     public void AddChild(MemoryNode child)
     {
-        child.Parent = this;
+        ArgumentNullException.ThrowIfNull(child);
 
-        // Recalculate the path for the child
-        child.FullPath = FullPath.Append(child.FullPath);
-
-        // if the child has any children and is a folder, recalculate that path as well
-        if (child is MemoryDirectoryNode dirNode)
+        lock (sync)
         {
-            foreach (MemoryNode grandchild in dirNode.Children)
-            {
-                grandchild.FullPath = dirNode.FullPath.Append(grandchild.FullPath.GetLeaf());
-            }
-        }
+            string leaf = child.FullPath.GetLeaf();
 
-        Children.Add(child);
+            if (_children.ContainsKey(leaf))
+                throw new IOException($"A node named '{leaf}' already exists in '{FullPath}'");
+
+            child.Parent = this;
+            child.FullPath = FullPath.Append(leaf);
+
+            if (child is MemoryDirectoryNode dirNode)
+            {
+                RecalculateDescendantPaths(dirNode);
+            }
+
+            _children.Add(leaf, child);
+        }
     }
 
     public void RemoveChild(MemoryNode child)
     {
-        if (Children.Remove(child))
-        {
-            child.Parent = null;
+        if (child == null) return;
 
-            // If the child is a directory, also update its children
-            if (child is MemoryDirectoryNode dirNode)
+        lock (sync)
+        {
+            string leaf = child.FullPath.GetLeaf();
+            if (_children.Remove(leaf))
             {
-                foreach (MemoryNode grandchild in dirNode.Children)
-                {
-                    grandchild.Parent = null;
-                }
+                child.Parent = null;
             }
         }
     }
 
-    public bool HasDirectoryChildren() => Children.Any(c => c.GetType() == typeof(MemoryDirectoryNode));
+    public bool HasDirectoryChildren()
+    {
+        lock (sync)
+        {
+            return _children.Values.Any(c => c is MemoryDirectoryNode);
+        }
+    }
 
-    public override MemoryDirectoryNode Clone() => (MemoryDirectoryNode)MemberwiseClone();
+    public bool TryGetChild(string name, out MemoryNode node)
+    {
+        lock (sync)
+        {
+            return _children.TryGetValue(name, out node!);
+        }
+    }
+
+    public override MemoryDirectoryNode Clone()
+    {
+        lock (sync)
+        {
+            MemoryDirectoryNode clone = new(FullPath);
+            CopyCommonStateTo(clone);
+
+            foreach (MemoryNode child in _children.Values)
+            {
+                MemoryNode childClone = child.Clone();
+                string leaf = childClone.FullPath.GetLeaf();
+
+                childClone.Parent = clone;
+                childClone.FullPath = clone.FullPath.Append(leaf);
+
+                if (childClone is MemoryDirectoryNode dirClone)
+                {
+                    RecalculateDescendantPaths(dirClone);
+                }
+
+                clone._children.Add(leaf, childClone);
+            }
+
+            return clone;
+        }
+    }
+
+    static void RecalculateDescendantPaths(MemoryDirectoryNode directory)
+    {
+        // Lock each directory independently to avoid holding parent locks too long
+        lock (directory.sync)
+        {
+            foreach (MemoryNode child in directory._children.Values)
+            {
+                child.FullPath = directory.FullPath.Append(child.FullPath.GetLeaf());
+                if (child is MemoryDirectoryNode childDir)
+                {
+                    RecalculateDescendantPaths(childDir);
+                }
+            }
+        }
+    }
 
     public void Dispose()
     {
@@ -67,15 +145,21 @@ public class MemoryDirectoryNode : MemoryNode, IDisposable
         {
             if (disposing)
             {
-                foreach (MemoryNode child in Children)
+                List<MemoryNode> snapshot;
+                lock (sync)
                 {
-                    if (child is IDisposable disposableChild)
+                    snapshot = [.. _children.Values];
+                    _children.Clear();
+                }
+
+                foreach (MemoryNode child in snapshot)
+                {
+                    if (child is IDisposable d)
                     {
-                        disposableChild.Dispose();
+                        d.Dispose();
                     }
                 }
             }
-
             disposed = true;
         }
     }

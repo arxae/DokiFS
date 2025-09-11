@@ -7,8 +7,8 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
 {
     public BackendProperties BackendProperties => BackendProperties.Transient;
 
-    readonly MemoryRoot root;
-    bool disposed;
+    private readonly MemoryRoot root;
+    private bool disposed;
 
     public MemoryFileSystemBackend()
     {
@@ -39,7 +39,6 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
             {
                 return dirNode.Children;
             }
-
             throw new InvalidOperationException($"Path '{path}' is not a directory.");
         }
 
@@ -54,142 +53,155 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
         if (TryGetNode(parentDirectoryPath, out MemoryNode parentNode) == false)
         {
             CreateDirectory(parentDirectoryPath);
-        }
-
-        MemoryDirectoryNode parentDirectory = parentNode as MemoryDirectoryNode;
-
-        if (TryGetNode(path, out MemoryNode _) == false)
-        {
-            MemoryFileNode fileNode = new(path.GetLeaf())
+            if (TryGetNode(parentDirectoryPath, out parentNode) == false)
             {
-                LastWriteTime = DateTime.UtcNow
-            };
-            fileNode.SetSize(size);
-
-            parentDirectory.AddChild(fileNode);
+                throw new DirectoryNotFoundException($"Could not create parent directory: '{parentDirectoryPath}'");
+            }
         }
+
+        if (parentNode is not MemoryDirectoryNode parentDirectory)
+        {
+            throw new IOException($"Parent path is not a directory: '{parentDirectoryPath}'");
+        }
+
+        if (TryGetNode(path, out _))
+        {
+            return;
+        }
+
+        MemoryFileNode fileNode = new(path.GetLeaf())
+        {
+            LastWriteTime = DateTime.UtcNow
+        };
+        fileNode.SetSize(size);
+        parentDirectory.AddChild(fileNode);
     }
 
     public void DeleteFile(VPath path)
     {
-        if (TryGetNode(path, out MemoryNode fileNode))
-        {
-            MemoryDirectoryNode parentDirectory = fileNode.Parent as MemoryDirectoryNode;
-            parentDirectory?.RemoveChild(fileNode);
-        }
-        else
+        if (TryGetNode(path, out MemoryNode fileNode) == false)
         {
             throw new FileNotFoundException($"File not found: '{path}'");
         }
+
+        if (fileNode.EntryType != VfsEntryType.File)
+        {
+            throw new IOException($"Path is not a file: '{path}'");
+        }
+
+        if (fileNode.Parent is MemoryDirectoryNode parentDir)
+        {
+            parentDir.RemoveChild(fileNode);
+        }
     }
 
-    public void MoveFile(VPath sourcePath, VPath destinationPath)
-        => MoveFile(sourcePath, destinationPath, true);
+    public void MoveFile(VPath sourcePath, VPath destinationPath) => MoveFile(sourcePath, destinationPath, true);
 
     public void MoveFile(VPath sourcePath, VPath destinationPath, bool overwrite)
     {
-        // Check source
-        bool sourcePathFound = TryGetNode(sourcePath, out MemoryNode sourceNode);
-
-        if (sourcePathFound == false)
+        if (TryGetNode(sourcePath, out MemoryNode sourceNode) == false)
         {
             throw new FileNotFoundException($"Source file not found: '{sourcePath}'");
         }
 
-        if (sourceNode.EntryType == VfsEntryType.Directory)
+        if (sourceNode.EntryType != VfsEntryType.File)
         {
-            throw new IOException($"Source path points to a directory, cannot move directory: '{sourcePath}'");
+            throw new IOException($"Source path points to a directory: '{sourcePath}'");
         }
 
-        // Check destination
-        // Check if file with new name already exists
-        bool destinationAlreadyExists = TryGetNode(destinationPath, out MemoryNode destinationNode);
-        if (destinationAlreadyExists)
+        bool destinationExists = TryGetNode(destinationPath, out MemoryNode destinationNode);
+        if (destinationExists)
         {
             if (destinationNode.EntryType == VfsEntryType.Directory)
             {
-                throw new IOException($"Destination path points to a directory, cannot move file to: '{destinationPath}'");
+                throw new IOException($"Destination path is a directory: '{destinationPath}'");
             }
 
             if (overwrite)
             {
-                (destinationNode.Parent as MemoryDirectoryNode).RemoveChild(destinationNode);
+                if (destinationNode.Parent is MemoryDirectoryNode destParent)
+                {
+                    destParent.RemoveChild(destinationNode);
+                }
             }
             else
             {
-                throw new IOException($"File already exists");
+                throw new IOException("File already exists");
             }
         }
 
-        bool destinationFolderFound = TryGetNode(destinationPath.GetDirectory(), out MemoryNode destinationFolderNode);
-        if (destinationFolderFound == false)
+        if (TryGetNode(destinationPath.GetDirectory(), out MemoryNode destFolderNode) == false)
         {
             throw new DirectoryNotFoundException($"Destination directory not found: '{destinationPath}'");
         }
 
-        // Move node
+        if (destFolderNode.EntryType != VfsEntryType.Directory)
+        {
+            throw new IOException($"Destination parent is not a directory: '{destinationPath.GetDirectory()}'");
+        }
+
         if (sourceNode.Parent == null)
         {
             throw new DetachedNodeException(sourceNode);
         }
-        MemoryFileNode file = sourceNode as MemoryFileNode;
-        MemoryDirectoryNode parent = sourceNode.Parent as MemoryDirectoryNode;
 
-        // Remove from the original folder
-        parent.RemoveChild(file);
-
-        // Rename the file
+        MemoryFileNode file = (MemoryFileNode)sourceNode;
+        if (file.Parent is MemoryDirectoryNode prevParent)
+        {
+            prevParent.RemoveChild(file);
+        }
         file.FullPath = destinationPath;
-        (destinationFolderNode as MemoryDirectoryNode).AddChild(file);
+        ((MemoryDirectoryNode)destFolderNode).AddChild(file);
     }
 
-    public void CopyFile(VPath sourcePath, VPath destinationPath)
-        => CopyFile(sourcePath, destinationPath, true);
+    public void CopyFile(VPath sourcePath, VPath destinationPath) => CopyFile(sourcePath, destinationPath, true);
 
     public void CopyFile(VPath sourcePath, VPath destinationPath, bool overwrite)
     {
-        // Check source
-        bool sourcePathFound = TryGetNode(sourcePath, out MemoryNode sourceNode);
-
-        if (sourcePathFound == false)
+        if (TryGetNode(sourcePath, out MemoryNode sourceNode) == false)
         {
             throw new FileNotFoundException($"Source file not found: '{sourcePath}'");
         }
 
-        // Check destination
-        // Check if file with new name already exists
-        bool destinationAlreadyExists = TryGetNode(destinationPath, out MemoryNode destinationNode);
-        if (destinationAlreadyExists)
+        if (sourceNode.EntryType != VfsEntryType.File)
         {
+            throw new IOException($"Source path is not a file: '{sourcePath}'");
+        }
+
+        bool destinationExists = TryGetNode(destinationPath, out MemoryNode destinationNode);
+        if (destinationExists)
+        {
+            if (destinationNode.EntryType == VfsEntryType.Directory)
+            {
+                throw new IOException($"Cannot overwrite directory with file: '{destinationPath}'");
+            }
+
             if (overwrite)
             {
-                (destinationNode.Parent as MemoryDirectoryNode).RemoveChild(destinationNode);
+                if (destinationNode.Parent is MemoryDirectoryNode dParent)
+                {
+                    dParent.RemoveChild(destinationNode);
+                }
             }
             else
             {
-                throw new IOException($"File already exists");
+                throw new IOException("File already exists");
             }
         }
 
-        bool destinationFolderFound = TryGetNode(destinationPath.GetDirectory(), out MemoryNode destinationFolderNode);
-        if (destinationFolderFound == false)
+        if (TryGetNode(destinationPath.GetDirectory(), out MemoryNode destFolderNode) == false)
         {
             throw new DirectoryNotFoundException($"Destination directory not found: '{destinationPath}'");
         }
 
-        if (destinationFolderNode.EntryType == VfsEntryType.File)
+        if (destFolderNode.EntryType != VfsEntryType.Directory)
         {
-            throw new IOException($"Destination path points to a directory, cannot move file to: '{destinationPath}'");
+            throw new IOException($"Destination parent is not a directory: '{destinationPath.GetDirectory()}'");
         }
 
-        // Create a copy of the node
-        MemoryFileNode file = sourceNode as MemoryFileNode;
-
-        MemoryFileNode cloneNode = file.Clone();
-        // Rename the file
-        cloneNode.FullPath = destinationPath;
-
-        (destinationFolderNode as MemoryDirectoryNode).AddChild(cloneNode);
+        MemoryFileNode clone = ((MemoryFileNode)sourceNode).Clone();
+        clone.FullPath = destinationPath;
+        ((MemoryDirectoryNode)destFolderNode).AddChild(clone);
     }
 
     // Filestreams
@@ -205,13 +217,10 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
             throw new IOException($"Cannot open a directory as a file: '{path}'");
         }
 
-        MemoryFileNode file = node as MemoryFileNode;
-
-        return file.OpenRead();
+        return ((MemoryFileNode)node).OpenRead();
     }
 
-    public Stream OpenWrite(VPath path)
-        => OpenWrite(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+    public Stream OpenWrite(VPath path) => OpenWrite(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
 
     public Stream OpenWrite(VPath path, FileMode mode, FileAccess access, FileShare share)
     {
@@ -234,130 +243,134 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
             }
         }
 
+        if (node.EntryType != VfsEntryType.File)
+        {
+            throw new IOException($"Path is not a file: '{path}'");
+        }
+
         return node.OpenWrite(mode, access, share);
     }
 
     // Directory Operations
     public void CreateDirectory(VPath path)
     {
-        // Path already exists, just return
-        if (Exists(path)) return;
+        if (Exists(path))
+        {
+            return;
+        }
 
         string[] segments = path.Split();
+        if (segments.Length == 0)
+        {
+            return;
+        }
 
-        // This is the backend root
-        if (segments.Length == 0) return;
-
-        // Start building from the root
         VPath currentPath = VPath.Root;
-
         MemoryDirectoryNode parent = root;
+
         for (int i = 0; i < segments.Length; i++)
         {
             currentPath = currentPath.Append(segments[i]);
 
-            // Try to get next node
             if (TryGetNode(currentPath, out MemoryNode node))
             {
-                parent = node as MemoryDirectoryNode;
+                parent = (MemoryDirectoryNode)node;
                 continue;
             }
-            // Node doesn't exist, create it
-            else
-            {
-                MemoryDirectoryNode newNode = new(currentPath);
-                parent.AddChild(newNode);
-                parent = newNode;
-            }
+
+            MemoryDirectoryNode newNode = new(currentPath);
+            parent.AddChild(newNode);
+            parent = newNode;
         }
     }
 
-    public void DeleteDirectory(VPath path)
-        => DeleteDirectory(path, false);
+    public void DeleteDirectory(VPath path) => DeleteDirectory(path, false);
 
     public void DeleteDirectory(VPath path, bool recursive)
     {
-        bool foundNode = TryGetNode(path, out MemoryNode node);
-
-        if (foundNode == false) throw new DirectoryNotFoundException($"Directory not found: '{path}'");
-        if (node.EntryType == VfsEntryType.File)
+        if (TryGetNode(path, out MemoryNode node) == false)
         {
-            throw new DirectoryNotFoundException($"Path points to a file, not a directory: '{path}'");
+            throw new DirectoryNotFoundException($"Directory not found: '{path}'");
         }
 
-        MemoryDirectoryNode dirNode = node as MemoryDirectoryNode;
+        if (node.EntryType != VfsEntryType.Directory)
+        {
+            throw new DirectoryNotFoundException($"Path points to a file: '{path}'");
+        }
 
-        // Remove all the children first
-        if (recursive == false && dirNode.Children.Count > 0)
+        MemoryDirectoryNode dir = (MemoryDirectoryNode)node;
+
+        if (recursive == false && dir.ChildCount > 0)
         {
             throw new IOException("The directory is not empty");
         }
 
-        if (dirNode.HasDirectoryChildren() && recursive)
+        if (recursive)
         {
-            List<MemoryNode> children = [.. dirNode.Children];
-            foreach (MemoryNode childNode in children)
+            foreach (MemoryDirectoryNode childDir in dir.Children.OfType<MemoryDirectoryNode>().ToList())
             {
-                DeleteDirectory(childNode.FullPath, recursive);
+                DeleteDirectory(childDir.FullPath, true);
+            }
+
+            foreach (MemoryFileNode file in dir.Children.OfType<MemoryFileNode>().ToList())
+            {
+                dir.RemoveChild(file);
+            }
+        }
+        else
+        {
+            if (dir.ChildCount > 0)
+            {
+                throw new IOException("The directory is not empty");
             }
         }
 
-        // detach the children
-        dirNode.Children
-            .Where(c => c is MemoryFileNode)
-            .ToList()
-            .ForEach(dirNode.RemoveChild);
-        // detach the directory from its parent
-        (dirNode.Parent as MemoryDirectoryNode)?.RemoveChild(dirNode);
+        if (dir.Parent is MemoryDirectoryNode parentDir)
+        {
+            parentDir.RemoveChild(dir);
+        }
     }
 
     public void MoveDirectory(VPath sourcePath, VPath destinationPath)
     {
-        // Check source exists
         if (TryGetNode(sourcePath, out MemoryNode sourceNode) == false)
         {
             throw new DirectoryNotFoundException($"Source directory not found: '{sourcePath}'");
         }
-
         if (sourceNode is not MemoryDirectoryNode sourceDir)
         {
             throw new IOException($"Source path is not a directory: '{sourcePath}'");
         }
 
-        // Check destination parent exists
         VPath destParentPath = destinationPath.GetDirectory();
         if (TryGetNode(destParentPath, out MemoryNode destParentNode) == false)
         {
             throw new DirectoryNotFoundException($"Destination parent directory not found: '{destParentPath}'");
         }
-
         if (destParentNode is not MemoryDirectoryNode destParentDir)
         {
             throw new IOException($"Destination parent is not a directory: '{destParentPath}'");
         }
 
-        // Check if destination already exists
-        if (TryGetNode(destinationPath, out MemoryNode _))
+        if (TryGetNode(destinationPath, out _))
         {
             throw new IOException($"Destination directory already exists: '{destinationPath}'");
         }
 
-        // Check if destination is a subdirectory of source
-        VPath testPath = destParentPath;
-        while (testPath.IsRoot == false)
+        VPath ancestor = destParentPath;
+        while (ancestor.IsRoot == false)
         {
-            if (testPath == sourcePath)
+            if (ancestor == sourcePath)
             {
-                throw new IOException($"Cannot move a directory to one of its subdirectories: '{destinationPath}'");
+                throw new IOException($"Cannot move a directory into its subtree: '{destinationPath}'");
             }
-            testPath = testPath.GetDirectory();
+            ancestor = ancestor.GetDirectory();
         }
 
-        // Remove from source parent
-        MemoryDirectoryNode sourceParent = sourceDir.Parent as MemoryDirectoryNode;
-        sourceParent.RemoveChild(sourceDir);
-
-        // Update path and add to destination parent
+        if (sourceDir.Parent is MemoryDirectoryNode prevParent)
+        {
+            prevParent.RemoveChild(sourceDir);
+        }
         sourceDir.FullPath = destinationPath;
         UpdateChildPaths(sourceDir, sourcePath, destinationPath);
         destParentDir.AddChild(sourceDir);
@@ -365,62 +378,52 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
 
     public void CopyDirectory(VPath sourcePath, VPath destinationPath)
     {
-        // Check source exists
         if (TryGetNode(sourcePath, out MemoryNode sourceNode) == false)
         {
             throw new DirectoryNotFoundException($"Source directory not found: '{sourcePath}'");
         }
-
         if (sourceNode is not MemoryDirectoryNode sourceDir)
         {
             throw new IOException($"Source path is not a directory: '{sourcePath}'");
         }
 
-        // Check destination parent exists
         VPath destParentPath = destinationPath.GetDirectory();
         if (TryGetNode(destParentPath, out MemoryNode destParentNode) == false)
         {
             throw new DirectoryNotFoundException($"Destination parent directory not found: '{destParentPath}'");
         }
-
         if (destParentNode is not MemoryDirectoryNode destParentDir)
         {
             throw new IOException($"Destination parent is not a directory: '{destParentPath}'");
         }
 
-        // Check if destination already exists
         if (Exists(destinationPath))
         {
             throw new IOException($"Destination directory already exists: '{destinationPath}'");
         }
 
-        // Create new destination directory
         MemoryDirectoryNode newDir = new(destinationPath);
         destParentDir.AddChild(newDir);
 
-        // Recursively copy all children
         foreach (MemoryNode child in sourceDir.Children)
         {
             VPath childDestPath = destinationPath.Append(child.FullPath.GetLeaf());
 
             if (child is MemoryFileNode fileNode)
             {
-                // Copy file
                 MemoryFileNode newFile = fileNode.Clone();
                 newFile.FullPath = childDestPath;
                 newDir.AddChild(newFile);
             }
             else if (child is MemoryDirectoryNode)
             {
-                // Recursively copy directory
                 CopyDirectory(child.FullPath, childDestPath);
             }
         }
     }
 
-    bool TryGetNode(VPath path, out MemoryNode node)
+    private bool TryGetNode(VPath path, out MemoryNode node)
     {
-        // Handle special cases
         if (path == VPath.Root)
         {
             node = root;
@@ -429,59 +432,63 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
 
         if (path.IsEmpty)
         {
-            node = null;
+            node = null!;
             return false;
         }
 
         return TryTraversePath(path.Split(), out node);
     }
 
-    bool TryTraversePath(string[] segments, out MemoryNode node)
+    private bool TryTraversePath(string[] segments, out MemoryNode node)
     {
-        MemoryDirectoryNode currentNode = root;
+        MemoryDirectoryNode current = root;
 
         for (int i = 0; i < segments.Length; i++)
         {
-            bool isLastSegment = i == segments.Length - 1;
+            bool last = i == segments.Length - 1;
 
-            if (isLastSegment)
+            if (last)
             {
-                node = FindNodeInDirectory(currentNode, segments[i]);
-                return node != null;
-            }
-
-            // Try to move to next directory
-            MemoryDirectoryNode nextDir = FindDirectoryInNode(currentNode, segments[i]);
-            if (nextDir == null)
-            {
-                node = null;
+                if (current.TryGetChild(segments[i], out MemoryNode found))
+                {
+                    node = found;
+                    return true;
+                }
+                node = null!;
                 return false;
             }
 
-            currentNode = nextDir;
+            if (current.TryGetChild(segments[i], out MemoryNode next) == false || next is not MemoryDirectoryNode nextDir)
+            {
+                node = null!;
+                return false;
+            }
+            current = nextDir;
         }
 
-        node = null;
+        node = null!;
         return false;
     }
 
-    static MemoryNode FindNodeInDirectory(MemoryDirectoryNode directory, string name)
-        => directory.Children.FirstOrDefault(c => c.FullPath.GetLeaf() == name);
-
-    static MemoryDirectoryNode FindDirectoryInNode(MemoryDirectoryNode directory, string name)
-        => directory.Children.FirstOrDefault(c => c.FullPath.GetLeaf() == name && c is MemoryDirectoryNode) as MemoryDirectoryNode;
-
-    void UpdateChildPaths(MemoryDirectoryNode directory, VPath oldBasePath, VPath newBasePath)
+    private void UpdateChildPaths(MemoryDirectoryNode directory, VPath oldBasePath, VPath newBasePath)
     {
         foreach (MemoryNode child in directory.Children)
         {
-            // Calculate the relative path from the old base path
-            string relativePath = child.FullPath.ToString()[oldBasePath.ToString().Length..];
-            // Create the new path by combining the new base path with the relative path
-            VPath newPath = newBasePath.Append(relativePath.TrimStart('/'));
-            child.FullPath = newPath;
+            string oldBase = oldBasePath.ToString();
+            string childFull = child.FullPath.ToString();
+            if (childFull.StartsWith(oldBase, StringComparison.Ordinal))
+            {
+                string relative = childFull[oldBase.Length..].TrimStart('/');
+                if (relative.Length == 0)
+                {
+                    child.FullPath = newBasePath;
+                }
+                else
+                {
+                    child.FullPath = newBasePath.Append(relative);
+                }
+            }
 
-            // Recursively update children of directories
             if (child is MemoryDirectoryNode childDir)
             {
                 UpdateChildPaths(childDir, oldBasePath, newBasePath);
@@ -489,37 +496,27 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
         }
     }
 
-    /// <summary>
-    /// Dumps the entire filesystem to disk
-    /// </summary>
-    /// <param name="physicalPath">The root folder to use</param>
     public void Dump(string physicalPath)
     {
-        // Create the root directory if it doesn't exist
         Directory.CreateDirectory(physicalPath);
-
-        // Recursively dump all children of the root
         DumpNode(root, physicalPath);
     }
 
-    void DumpNode(MemoryNode node, string physicalBasePath)
+    private void DumpNode(MemoryNode node, string physicalBasePath)
     {
         if (node is MemoryDirectoryNode dirNode)
         {
-            // For directories, create the directory and dump all children
             foreach (MemoryNode child in dirNode.Children)
             {
                 string childPhysicalPath = Path.Combine(physicalBasePath, child.FullPath.GetLeaf());
 
                 if (child is MemoryDirectoryNode)
                 {
-                    // Create directory and recursively dump its contents
                     Directory.CreateDirectory(childPhysicalPath);
                     DumpNode(child, childPhysicalPath);
                 }
                 else if (child is MemoryFileNode fileNode)
                 {
-                    // Write file contents to disk
                     using Stream sourceStream = fileNode.OpenRead();
                     using FileStream destStream = File.Create(childPhysicalPath);
                     sourceStream.CopyTo(destStream);
@@ -542,7 +539,6 @@ public class MemoryFileSystemBackend : IFileSystemBackend, IDisposable
             {
                 root.Dispose();
             }
-
             disposed = true;
         }
     }
