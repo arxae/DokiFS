@@ -51,7 +51,10 @@ public class JournalFileSystemBackend : IFileSystemBackend, ICommit
     }
 
     /// <inheritdoc />
-    public BackendProperties BackendProperties => BackendProperties.Transient | BackendProperties.RequiresCommit;
+    public BackendProperties BackendProperties
+        => targetBackend == null
+            ? BackendProperties.Transient
+            : BackendProperties.RequiresCommit | BackendProperties.Transient;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="JournalFileSystemBackend"/> class without a target backend.

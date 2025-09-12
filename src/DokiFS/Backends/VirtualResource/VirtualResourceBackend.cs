@@ -12,6 +12,8 @@ public class VirtualResourceBackend : IFileSystemBackend
     public void RegisterHandler<T>(VPath handlerPath)
         where T : IVirtualResourceHandler, new()
     {
+        handlerPath = NormalizeHandlerPath(handlerPath);
+
         lock (handlerLock)
         {
             if (handlers.TryAdd(handlerPath, new T()) == false)
@@ -24,6 +26,7 @@ public class VirtualResourceBackend : IFileSystemBackend
     public void RegisterHandler(VPath handlerPath, IVirtualResourceHandler handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
+        handlerPath = NormalizeHandlerPath(handlerPath);
 
         lock (handlerLock)
         {
@@ -34,43 +37,55 @@ public class VirtualResourceBackend : IFileSystemBackend
         }
     }
 
-    public bool UnregisterHandler(string methodName)
+    public bool UnregisterHandler(VPath handlerPath)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(methodName);
+        handlerPath = NormalizeHandlerPath(handlerPath);
 
         lock (handlerLock)
         {
-            return handlers.Remove(methodName);
+            return handlers.Remove(handlerPath);
         }
+    }
+
+    static VPath NormalizeHandlerPath(VPath handlerPath)
+    {
+        if (handlerPath == VPath.Root)
+        {
+            throw new ArgumentException("Handler cannot be root.", nameof(handlerPath));
+        }
+
+        string raw = handlerPath.ToString();
+        if (raw.StartsWith(VPath.DirectorySeparatorString, StringComparison.Ordinal) == false)
+        {
+            raw = VPath.DirectorySeparatorString + raw;
+        }
+
+        return raw;
     }
 
     public bool TryResolveHandler(VPath path,
         out IVirtualResourceHandler handler,
-        out VPath pathRemainder)    // The remaining path, used as the parameters. Eg: /proc/meminfo -> /meminfo
+        out VPath pathRemainder)
     {
-        string[] segments = path.Split();
+        handler = null;
+        pathRemainder = VPath.Empty;
 
-        // This is probably root, root has no handler. Although some other methods should catch this
-        // Since it's technically not part of the backend
-        if (segments.Length == 0)
-        {
-            handler = null;
-            pathRemainder = VPath.Empty;
+        if (path == VPath.Root)
             return false;
-        }
 
-        // Reassemble the path without the handler name
-        if (segments.Length > 1)
-        {
-            pathRemainder = VPath.DirectorySeparatorString + string.Join(VPath.DirectorySeparator, segments[1..]);
-        }
-        else
-        {
-            pathRemainder = VPath.Root;
-        }
+        string[] segments = path.Split();
+        if (segments.Length == 0)
+            return false;
 
         string handlerName = segments[0];
-        return handlers.TryGetValue($"/{handlerName}", out handler);
+        pathRemainder = segments.Length > 1
+            ? VPath.DirectorySeparatorString + string.Join(VPath.DirectorySeparator, segments[1..])
+            : VPath.Root;
+
+        lock (handlerLock)
+        {
+            return handlers.TryGetValue("/" + handlerName, out handler);
+        }
     }
 
     public MountResult OnMount(VPath mountPoint) => MountResult.Accepted;
@@ -78,12 +93,13 @@ public class VirtualResourceBackend : IFileSystemBackend
 
     public bool Exists(VPath path)
     {
+        if (path == VPath.Root) return true;
+
         if (TryResolveHandler(path, out IVirtualResourceHandler handler, out VPath pathRemainder))
         {
             if (handler.CanRead == false) return false;
             return handler.HandleExist(pathRemainder);
         }
-
         return false;
     }
 
@@ -91,13 +107,14 @@ public class VirtualResourceBackend : IFileSystemBackend
     {
         if (path == VPath.Root)
         {
+            DateTime now = DateTime.UtcNow;
             return new VfsEntry(
                 "/",
                 VfsEntryType.Directory,
                 VfsEntryProperties.None)
             {
                 Size = 0,
-                LastWriteTime = DateTime.UtcNow,
+                LastWriteTime = now,
                 FromBackend = typeof(VirtualResourceBackend),
                 Description = "Virtual resource backend root"
             };
@@ -114,36 +131,35 @@ public class VirtualResourceBackend : IFileSystemBackend
 
     public IEnumerable<IVfsEntry> ListDirectory(VPath path)
     {
-        if (TryResolveHandler(path, out IVirtualResourceHandler handler, out VPath pathRemainder) == false)
+        if (path == VPath.Root)
         {
-            throw new DirectoryNotFoundException();
-        }
-
-        if (path == "/")
-        {
-            List<IVfsEntry> entries = [];
+            DateTime now = DateTime.UtcNow;
+            List<IVfsEntry> entries;
             lock (handlerLock)
             {
-                foreach (VPath handlerName in handlers.Keys)
-                {
-                    entries.Add(new VfsEntry(
-                        handlerName,
+                entries = [.. handlers.Keys.Select(handlerPath =>
+                    new VfsEntry(
+                        handlerPath,
                         VfsEntryType.Directory,
                         VfsEntryProperties.Readonly)
                     {
                         Size = 0,
-                        LastWriteTime = DateTime.UtcNow,
+                        LastWriteTime = now,
                         FromBackend = typeof(VirtualResourceBackend),
-                        Description = $"Virtual Resource: {handlerName}"
-                    });
-                }
+                        Description = $"Virtual Resource: {handlerPath}"
+                    }).Cast<IVfsEntry>()];
             }
-
             return entries;
         }
 
+        if (TryResolveHandler(path, out IVirtualResourceHandler handler, out VPath pathRemainder) == false)
+        {
+            throw new DirectoryNotFoundException(path.ToString());
+        }
+
         if (handler.CanRead == false) return [];
-        return handler.HandleListDirectory(pathRemainder);
+
+        return handler.HandleListDirectory(pathRemainder) ?? [];
     }
 
     public void CreateFile(VPath path, long size = 0)
@@ -171,7 +187,6 @@ public class VirtualResourceBackend : IFileSystemBackend
             if (handler.CanRead == false) throw new NotAllowedToReadException();
             return handler.HandleOpenRead(pathRemainder);
         }
-
         throw new FileNotFoundException($"File not found: {path}");
     }
 
@@ -183,25 +198,14 @@ public class VirtualResourceBackend : IFileSystemBackend
         if (TryResolveHandler(path, out IVirtualResourceHandler handler, out VPath pathRemainder))
         {
             if (handler.CanWrite == false) throw new NotAllowedToWriteException();
-            return handler.HandleOpenWrite(pathRemainder, mode, access);
+            return handler.HandleOpenWrite(pathRemainder, mode, access, share);
         }
-
         throw new FileNotFoundException($"File not found: {path}");
     }
 
-    public void CreateDirectory(VPath path)
-        => throw new NotSupportedException();
-
-    public void DeleteDirectory(VPath path)
-        => throw new NotSupportedException();
-
-    public void DeleteDirectory(VPath path, bool recursive)
-        => throw new NotSupportedException();
-
-    public void MoveDirectory(VPath sourcePath, VPath destinationPath)
-        => throw new NotSupportedException();
-
-    public void CopyDirectory(VPath sourcePath, VPath destinationPath)
-        => throw new NotSupportedException();
-
+    public void CreateDirectory(VPath path) => throw new NotSupportedException();
+    public void DeleteDirectory(VPath path) => throw new NotSupportedException();
+    public void DeleteDirectory(VPath path, bool recursive) => throw new NotSupportedException();
+    public void MoveDirectory(VPath sourcePath, VPath destinationPath) => throw new NotSupportedException();
+    public void CopyDirectory(VPath sourcePath, VPath destinationPath) => throw new NotSupportedException();
 }

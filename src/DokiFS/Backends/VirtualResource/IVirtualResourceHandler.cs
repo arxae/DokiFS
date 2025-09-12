@@ -11,5 +11,5 @@ public interface IVirtualResourceHandler
     IVfsEntry HandleGetInfo(VPath path);
     IEnumerable<IVfsEntry> HandleListDirectory(VPath path);
     Stream HandleOpenRead(VPath path);
-    Stream HandleOpenWrite(VPath path, FileMode mode = FileMode.OpenOrCreate, FileAccess access = FileAccess.ReadWrite);
+    Stream HandleOpenWrite(VPath path, FileMode mode = FileMode.OpenOrCreate, FileAccess access = FileAccess.ReadWrite, FileShare share = FileShare.Read);
 }
