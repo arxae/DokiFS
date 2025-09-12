@@ -13,11 +13,19 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
 
     public string RootPhysicalPath => BackendRoot;
 
+    const string FileDescriptor = "Physical File";
+    const string DirectoryDescriptor = "Physical Directory";
+
+    readonly StringComparison pathComparison =
+        RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ||
+        RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
     public PhysicalFileSystemBackend(string physicalPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(physicalPath);
 
-        // If an absolute path is used, get the full path
         string fullRoot;
         try
         {
@@ -31,7 +39,7 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
 
         if (File.Exists(fullRoot))
         {
-            throw new InvalidPathException($"The provided path '{physicalPath}' Points to a file instead of a folder");
+            throw new InvalidPathException($"The provided path '{physicalPath}' points to a file instead of a folder");
         }
 
         if (Directory.Exists(fullRoot) == false)
@@ -39,7 +47,7 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
             throw new InvalidPathException($"The provided path '{physicalPath}' does not exist");
         }
 
-        BackendRoot = physicalPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        BackendRoot = fullRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
     }
 
     public MountResult OnMount(VPath mountPoint) => MountResult.Accepted;
@@ -49,7 +57,6 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
     public bool Exists(VPath path)
     {
         TryGetPhysicalPath(path, out string physicalPath);
-
         return File.Exists(physicalPath) || Directory.Exists(physicalPath);
     }
 
@@ -60,12 +67,12 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
         if (File.Exists(physicalPath))
         {
             FileInfo fileInfo = new(physicalPath);
-            return VfsEntry.FromFileSystemInfo(fileInfo, path, typeof(PhysicalFileSystemBackend), "PhysicalFileSystemBackend:55");
+            return VfsEntry.FromFileSystemInfo(fileInfo, path, typeof(PhysicalFileSystemBackend), FileDescriptor);
         }
         else if (Directory.Exists(physicalPath))
         {
             DirectoryInfo dirInfo = new(physicalPath);
-            return VfsEntry.FromFileSystemInfo(dirInfo, path, typeof(PhysicalFileSystemBackend), "PhysicalFileSystemBackend:60");
+            return VfsEntry.FromFileSystemInfo(dirInfo, path, typeof(PhysicalFileSystemBackend), DirectoryDescriptor);
         }
 
         throw new FileNotFoundException($"Path not found within backend: '{path}'");
@@ -88,10 +95,10 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
         DirectoryInfo directoryInfo = new(physicalPath);
 
         IEnumerable<VfsEntry> directories = directoryInfo.EnumerateDirectories()
-            .Select(d => VfsEntry.FromFileSystemInfo(d, path.Append(d.Name), typeof(PhysicalFileSystemBackend), "Physical Folder"));
+            .Select(d => VfsEntry.FromFileSystemInfo(d, path.Append(d.Name), typeof(PhysicalFileSystemBackend), DirectoryDescriptor));
 
         IEnumerable<VfsEntry> files = directoryInfo.EnumerateFiles()
-            .Select(f => VfsEntry.FromFileSystemInfo(f, path.Append(f.Name), typeof(PhysicalFileSystemBackend), "Physical File"));
+            .Select(f => VfsEntry.FromFileSystemInfo(f, path.Append(f.Name), typeof(PhysicalFileSystemBackend), FileDescriptor));
 
         return directories.Concat(files);
     }
@@ -106,7 +113,6 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
             throw new IOException($"Path points to a directory: '{path}'");
         }
 
-        // Check if the directory tree exists, otherwise create it
         string parentDirectory = Path.GetDirectoryName(physicalPath);
         Directory.CreateDirectory(parentDirectory);
 
@@ -141,9 +147,6 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
             throw new FileNotFoundException($"File not found: '{path}'");
         }
 
-        // On non-windows systems we need to use lsof to check if a file is in use, since deleting an in use
-        // fails silently on these platforms
-        // On windows, File.Delete throws an exception when the file is in use.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) == false && OSUtils.UnixFileInUse(physicalPath))
         {
             throw new IOException($"File '{path}' is in use by another process and cannot be deleted.");
@@ -164,19 +167,16 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
 
         string destination = GetPhysicalPath(destinationPath);
 
-        // Check if source is a directory
         if (Directory.Exists(source))
         {
             throw new IOException($"Source path points to a directory, cannot move as file: '{sourcePath}'");
         }
 
-        // Check if destination is a directory
         if (Directory.Exists(destination))
         {
             throw new IOException($"Destination path points to a directory, cannot move file to: '{destinationPath}'");
         }
 
-        // Ensure file tree
         Directory.CreateDirectory(Path.GetDirectoryName(destination));
         File.Move(source, destination, overwrite);
     }
@@ -189,13 +189,11 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
         TryGetPhysicalPath(sourcePath, out string source);
         string destination = GetPhysicalPath(destinationPath);
 
-        // Check if source is a directory
         if (Directory.Exists(source))
         {
             throw new IOException($"Source path points to a directory, cannot move as file: '{sourcePath}'");
         }
 
-        // Check if destination is a directory
         if (Directory.Exists(destination))
         {
             throw new IOException($"Destination path points to a directory, cannot move file to: '{destinationPath}'");
@@ -218,8 +216,7 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
         }
         catch (UnauthorizedAccessException)
         {
-            // Remap to a more accurate exception
-            throw new IOException($"Path points to a directory: '{path}'");
+            throw new IOException($"Path points to a directory or is not readable: '{path}'");
         }
     }
 
@@ -230,7 +227,6 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
     {
         string physicalPath;
 
-        // If it's an "open" mode, the file should exist
         if (mode is FileMode.Open or FileMode.Append or FileMode.Truncate)
         {
             if (TryGetPhysicalPath(path, out physicalPath) == false)
@@ -238,15 +234,12 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
                 throw new FileNotFoundException($"File not found: '{path}'");
             }
         }
-        // Otherwise, just get the path to it. Opening a filestream
-        // will create it
         else
         {
             physicalPath = GetPhysicalPath(path);
         }
 
         string parentDirectory = Path.GetDirectoryName(physicalPath);
-
         Directory.CreateDirectory(parentDirectory);
 
         return new FileStream(physicalPath, mode, access, share);
@@ -264,13 +257,16 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
 
     public void DeleteDirectory(VPath path, bool recursive)
     {
-        TryGetPhysicalPath(path, out string physicalPath);
+        string physicalPath = GetPhysicalPath(path);
 
-        // On Mac, Directory.Delete throws a DirectoryNotFoundException instead of an IOException.
-        // Check here to make sure the exceptions are the same across platforms
-        if (GetInfo(path).EntryType == VfsEntryType.File)
+        if (File.Exists(physicalPath))
         {
             throw new IOException($"Path points to a file: '{path}'");
+        }
+
+        if (Directory.Exists(physicalPath) == false)
+        {
+            throw new DirectoryNotFoundException($"Directory not found: '{path}'");
         }
 
         Directory.Delete(physicalPath, recursive);
@@ -280,7 +276,6 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
     {
         TryGetPhysicalPath(sourcePath, out string source);
         string destination = GetPhysicalPath(destinationPath);
-
         Directory.Move(source, destination);
     }
 
@@ -289,64 +284,54 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
         TryGetPhysicalPath(sourcePath, out string source);
         string destination = GetPhysicalPath(destinationPath);
 
-        DirectoryInfo dir = new(source);
-
-        // Check if the source directory exists
-        if (dir.Exists == false)
+        if (Directory.Exists(source) == false)
         {
-            throw new DirectoryNotFoundException($"Source directory not found: {dir.FullName}");
+            throw new DirectoryNotFoundException($"Source directory not found: {source}");
         }
-        DirectoryInfo[] dirs = dir.GetDirectories();
+
+        if (destination.StartsWith(source, pathComparison))
+        {
+            throw new IOException("Destination directory is within the source directory hierarchy.");
+        }
 
         Directory.CreateDirectory(destination);
 
-        foreach (FileInfo file in dir.GetFiles())
+        foreach (string entry in Directory.EnumerateFileSystemEntries(source))
         {
-            string targetFilePath = Path.Combine(destination, file.Name);
-            file.CopyTo(targetFilePath);
-        }
+            string name = Path.GetFileName(entry);
+            string destChildPhysical = Path.Combine(destination, name);
 
-        foreach (DirectoryInfo subDir in dirs)
-        {
-            string newDestinationDir = Path.Combine(destination, subDir.Name);
-            CopyDirectory(subDir.FullName, newDestinationDir);
+            if (Directory.Exists(entry))
+            {
+                CopyDirectory(sourcePath.Append(name), destinationPath.Append(name));
+            }
+            else
+            {
+                File.Copy(entry, destChildPhysical, overwrite: true);
+            }
         }
     }
 
     public bool TryGetPhysicalPath(VPath path, out string physicalPath)
     {
-        // Trim the leading / from the virtual path
-        if (path.IsAbsolute)
-        {
-            path = path.FullPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        }
-
         try
         {
-            physicalPath = Path.GetFullPath(Path.Combine(BackendRoot, (string)path));
+            string candidate = GetPhysicalPath(path); // normalized + boundary
+            if (File.Exists(candidate) || Directory.Exists(candidate))
+            {
+                physicalPath = candidate;
+                return true;
+            }
+            physicalPath = null;
+            return false;
         }
         catch
         {
             physicalPath = null;
             return false;
         }
-
-        // Verify that the path is actually part of the backend.
-        if (physicalPath.StartsWith(BackendRoot, StringComparison.OrdinalIgnoreCase) == false)
-        {
-            throw new UnauthorizedAccessException($"Resolved path '{physicalPath}' is outside the backend root '{BackendRoot}'.");
-        }
-
-        if (File.Exists(physicalPath) || Directory.Exists(physicalPath))
-        {
-            return true;
-        }
-
-        physicalPath = null;
-        return false;
     }
 
-    // Gets the physical path to a file, even if it doesn't exist
     string GetPhysicalPath(VPath path)
     {
         if (path.IsAbsolute)
@@ -354,6 +339,14 @@ public class PhysicalFileSystemBackend : IFileSystemBackend, IPhysicalPathProvid
             path = path.FullPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
-        return Path.Combine(BackendRoot, (string)path);
+        string combined = Path.Combine(BackendRoot, (string)path);
+        string full = Path.GetFullPath(combined);
+
+        if (full.StartsWith(BackendRoot, pathComparison) == false)
+        {
+            throw new UnauthorizedAccessException($"Resolved path '{full}' is outside the backend root '{BackendRoot}'.");
+        }
+
+        return full;
     }
 }
