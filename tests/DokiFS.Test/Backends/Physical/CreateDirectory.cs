@@ -4,7 +4,7 @@ namespace DokiFS.Tests.Backends.Physical;
 
 public class PhysicalFileSystemBackendCreateDirectoryTests : IDisposable
 {
-    readonly PhysicalBackendTestUtilities util;
+    readonly IoTestUtilities util;
 
     public PhysicalFileSystemBackendCreateDirectoryTests()
     {
@@ -13,9 +13,11 @@ public class PhysicalFileSystemBackendCreateDirectoryTests : IDisposable
 
     public void Dispose()
     {
-        util.Dispose();
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
+
+    protected virtual void Dispose(bool disposing) => util.Dispose();
 
     [Fact(DisplayName = "CreateDirectory: Creates directory")]
     public void ShouldCreateDirectory()

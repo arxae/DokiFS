@@ -4,7 +4,7 @@ namespace DokiFS.Tests.Backends.Physical;
 
 public class PhysicalFileSystemBackendOpenReadTests : IDisposable
 {
-    readonly PhysicalBackendTestUtilities util;
+    readonly IoTestUtilities util;
 
     public PhysicalFileSystemBackendOpenReadTests()
     {
@@ -13,9 +13,11 @@ public class PhysicalFileSystemBackendOpenReadTests : IDisposable
 
     public void Dispose()
     {
-        util.Dispose();
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
+
+    protected virtual void Dispose(bool disposing) => util.Dispose();
 
     [Fact(DisplayName = "OpenStrean: Should open stream")]
     public void ShouldOpenStream()
@@ -55,6 +57,6 @@ public class PhysicalFileSystemBackendOpenReadTests : IDisposable
 
         Assert.True(util.DirExists(path));
 
-        Assert.Throws<IOException>(() => backend.OpenRead(path));
+        Assert.Throws<IOException>(() => backend.OpenRead(dir));
     }
 }

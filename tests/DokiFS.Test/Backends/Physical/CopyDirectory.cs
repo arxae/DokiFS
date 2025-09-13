@@ -4,28 +4,28 @@ namespace DokiFS.Tests.Backends.Physical;
 
 public class PhysicalFileSystemBackendCopyDirectoryTests : IDisposable
 {
-    readonly List<PhysicalBackendTestUtilities> utils = [];
+    readonly List<IoTestUtilities> utils = [];
 
     public void Dispose()
     {
-        utils.ForEach(u => u.Dispose());
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
+
+    protected virtual void Dispose(bool disposing) => utils.ForEach(u => u.Dispose());
 
     [Fact(DisplayName = "CopyDirectory: Should copy directory and contents")]
     public void ShouldCopyDirectoryAndContents()
     {
-        PhysicalBackendTestUtilities util = new(nameof(ShouldCopyDirectoryAndContents));
+        IoTestUtilities util = new(nameof(ShouldCopyDirectoryAndContents));
         utils.Add(util);
         PhysicalFileSystemBackend backend = new(util.BackendRoot);
 
         string source = "moveSource";
-        VPath sourcePath = $"/{source}";
 
         string dirFile = $"{source}/file1.txt";
 
         string destination = "moveDest";
-        VPath destPath = $"/{destination}";
         string dirFileDest = $"{destination}/file1.txt";
 
 

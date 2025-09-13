@@ -4,23 +4,25 @@ namespace DokiFS.Tests.Backends.Physical;
 
 public class PhysicalFileSystemBackendMoveDirectoryTests : IDisposable
 {
-    readonly List<PhysicalBackendTestUtilities> utils = [];
+    readonly List<IoTestUtilities> utils = [];
 
     public void Dispose()
     {
-        utils.ForEach(u => u.Dispose());
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
+
+    protected virtual void Dispose(bool disposing) => utils.ForEach(u => u.Dispose());
 
     [Fact(DisplayName = "MoveDirectory: Should move directory")]
     public void ShouldMoveDirectory()
     {
-        PhysicalBackendTestUtilities util = new(nameof(ShouldMoveDirectory));
+        IoTestUtilities util = new(nameof(ShouldMoveDirectory));
         utils.Add(util);
         PhysicalFileSystemBackend backend = new(util.BackendRoot);
 
         string source = "moveSource";
-        VPath soucePath = $"/{source}";
+        VPath sourcePath = $"/{source}";
 
         string destination = "moveDest";
         VPath destPath = $"/{destination}";
@@ -30,7 +32,7 @@ public class PhysicalFileSystemBackendMoveDirectoryTests : IDisposable
         Assert.True(util.DirExists(source));
         Assert.False(util.DirExists(destination));
 
-        backend.MoveDirectory(source, destination);
+        backend.MoveDirectory(sourcePath, destPath);
 
         Assert.False(util.DirExists(source));
         Assert.True(util.DirExists(destination));

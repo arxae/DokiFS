@@ -4,18 +4,20 @@ namespace DokiFS.Tests.Backends.Physical;
 
 public class PhysicalFileSystemBackendCopyFileTests : IDisposable
 {
-    readonly List<PhysicalBackendTestUtilities> utils = [];
+    readonly List<IoTestUtilities> utils = [];
 
     public void Dispose()
     {
-        utils.ForEach(u => u.Dispose());
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
+
+    protected virtual void Dispose(bool disposing) => utils.ForEach(u => u.Dispose());
 
     [Fact(DisplayName = "CopyFile: Copy File")]
     public void CopyFile()
     {
-        PhysicalBackendTestUtilities util = new(nameof(CopyFile));
+        IoTestUtilities util = new(nameof(CopyFile));
         utils.Add(util);
 
         PhysicalFileSystemBackend backend = new(util.BackendRoot);
@@ -39,7 +41,7 @@ public class PhysicalFileSystemBackendCopyFileTests : IDisposable
     [Fact(DisplayName = "CopyFile: Source does not exist")]
     public void CopyFileSourceNotExist()
     {
-        PhysicalBackendTestUtilities util = new(nameof(CopyFileSourceNotExist));
+        IoTestUtilities util = new(nameof(CopyFileSourceNotExist));
         utils.Add(util);
 
         PhysicalFileSystemBackend backend = new(util.BackendRoot);
@@ -58,7 +60,7 @@ public class PhysicalFileSystemBackendCopyFileTests : IDisposable
     [Fact(DisplayName = "CopyFile: Source exists and is directory")]
     public void CopyFileSourceIsDirectory()
     {
-        PhysicalBackendTestUtilities util = new(nameof(CopyFileSourceIsDirectory));
+        IoTestUtilities util = new(nameof(CopyFileSourceIsDirectory));
         utils.Add(util);
 
         PhysicalFileSystemBackend backend = new(util.BackendRoot);
@@ -79,7 +81,7 @@ public class PhysicalFileSystemBackendCopyFileTests : IDisposable
     [Fact(DisplayName = "CopyFile: Destination exists and is directory")]
     public void CopyFileDestinationIsDirectory()
     {
-        PhysicalBackendTestUtilities util = new(nameof(CopyFileDestinationIsDirectory));
+        IoTestUtilities util = new(nameof(CopyFileDestinationIsDirectory));
         utils.Add(util);
 
         PhysicalFileSystemBackend backend = new(util.BackendRoot);

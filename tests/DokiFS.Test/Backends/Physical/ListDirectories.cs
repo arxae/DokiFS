@@ -5,18 +5,20 @@ namespace DokiFS.Tests.Backends.Physical;
 
 public class PhysicalFileSystemBackendListDirectoriesTests : IDisposable
 {
-    readonly List<PhysicalBackendTestUtilities> utils = [];
+    readonly List<IoTestUtilities> utils = [];
 
     public void Dispose()
     {
-        utils.ForEach(u => u.Dispose());
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
+
+    protected virtual void Dispose(bool disposing) => utils.ForEach(u => u.Dispose());
 
     [Fact(DisplayName = "ListDirectories: Basic listing")]
     public void GetInfoBasicGetInfoForExistingFile()
     {
-        PhysicalBackendTestUtilities util = new("ListDirectoriesBasic");
+        IoTestUtilities util = new(nameof(GetInfoBasicGetInfoForExistingFile));
         utils.Add(util);
         PhysicalFileSystemBackend backend = new(util.BackendRoot);
 

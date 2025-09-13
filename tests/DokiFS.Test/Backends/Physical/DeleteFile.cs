@@ -4,18 +4,20 @@ namespace DokiFS.Tests.Backends.Physical;
 
 public class PhysicalFileSystemBackendDeleteFileTests : IDisposable
 {
-    readonly PhysicalBackendTestUtilities util;
+    readonly IoTestUtilities util;
 
     public PhysicalFileSystemBackendDeleteFileTests()
     {
-        util = new("CreateFile");
+        util = new(nameof(PhysicalFileSystemBackendDeleteFileTests));
     }
 
     public void Dispose()
     {
-        util.Dispose();
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
+
+    protected virtual void Dispose(bool disposing) => util.Dispose();
 
     [Fact(DisplayName = "DeleteFile: Basic Delete File")]
     public void ShouldDeleteFile()

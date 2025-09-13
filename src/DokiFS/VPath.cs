@@ -110,9 +110,6 @@ public readonly struct VPath : IEquatable<VPath>
             // Skip duplicate separators
             if (c == DirectorySeparator && lastWasSeparator) continue;
 
-            // Don't add trailing separator unless it's the root path
-            if (c == DirectorySeparator && i == span.Length - 1 && i > 0) continue;
-
             lastWasSeparator = c == DirectorySeparator;
             sb.Append(c);
         }
@@ -188,7 +185,7 @@ public readonly struct VPath : IEquatable<VPath>
         if (lastIndex == 1 && pathSpan[0] == DirectorySeparator) return Root;
 
         // Use Span for slicing to avoid allocating string prematurely
-        return new VPath(pathSpan[..lastIndex].ToString());
+        return new VPath(pathSpan[..(lastIndex + 1)].ToString());
     }
 
     /// <summary>
@@ -248,7 +245,7 @@ public readonly struct VPath : IEquatable<VPath>
         // Check if the path ends with a file (assume file.ext)
         // Take the last segment
         int lastSegmentIndex = pathSpan.LastIndexOf(DirectorySeparator);
-        if (lastSegmentIndex <= 0) return string.Empty;
+        if (lastSegmentIndex < 0) return string.Empty;
 
         ReadOnlySpan<char> finalSegment = FullPath.AsSpan(lastSegmentIndex + 1);
 

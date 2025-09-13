@@ -1,7 +1,7 @@
 using System.IO.Compression;
 using DokiFS.Interfaces;
 
-namespace DokiFS.Backends.Archive;
+namespace DokiFS.Backends.Archive.Zip;
 
 public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
 {
@@ -56,6 +56,7 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
         )
         {
             Size = entry.Length,
+            CompressedSize = entry.CompressedLength,
             LastWriteTime = entry.LastWriteTime.UtcDateTime,
             FromBackend = GetType(),
             Description = entryType == VfsEntryType.Directory ? "ZIP Folder" : "Zip File"
@@ -64,48 +65,49 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
 
     public IEnumerable<IVfsEntry> ListDirectory(VPath path)
     {
-        // Return only immediate children (files or directories) of the specified directory
-        string dirPrefix = path.FullPath;
-        if (dirPrefix.EndsWith('/') == false)
-        {
-            dirPrefix += '/';
-        }
+        string dirPrefix = GetDirectoryPrefix(path);
 
         Dictionary<string, IVfsEntry> children = new(StringComparer.OrdinalIgnoreCase);
 
         foreach (ZipArchiveEntry entry in archive.Entries)
         {
-            if (!entry.FullName.StartsWith(dirPrefix, StringComparison.OrdinalIgnoreCase))
+            // For root we accept every entry; otherwise filter by prefix
+            if (entry.FullName.StartsWith(dirPrefix, StringComparison.OrdinalIgnoreCase) == false && dirPrefix.Length > 0)
+            {
                 continue;
+            }
 
             string remainder = entry.FullName[dirPrefix.Length..];
+
+            // Don't include the directory itself
             if (remainder.Length == 0)
             {
                 continue;
             }
 
             int slashIndex = remainder.IndexOf('/');
+            // Is a directory
             if (slashIndex >= 0)
             {
-                // Immediate directory child
                 string childDirSegment = remainder[..(slashIndex + 1)];
-                string childDirFull = dirPrefix + childDirSegment;
-                if (!children.ContainsKey(childDirFull))
+                string childDirFull = VPath.DirectorySeparator + dirPrefix + childDirSegment;
+
+                if (children.ContainsKey(childDirFull)) continue;
+
+                VPath childDirPath = new(childDirFull);
+                children[childDirFull] = new ArchiveEntry(childDirPath, VfsEntryType.Directory)
                 {
-                    VPath childDirPath = new(childDirFull);
-                    children[childDirFull] = new ArchiveEntry(childDirPath, VfsEntryType.Directory)
-                    {
-                        Size = 0,
-                        LastWriteTime = entry.LastWriteTime.UtcDateTime,
-                        FromBackend = GetType(),
-                        Description = "ZIP Folder"
-                    };
-                }
+                    Size = entry.Length,
+                    CompressedSize = entry.CompressedLength,
+                    LastWriteTime = entry.LastWriteTime.UtcDateTime,
+                    FromBackend = GetType(),
+                    Description = "ZIP Folder"
+                };
             }
-            else
+            else // Is a file
             {
-                string childFileFull = dirPrefix + remainder;
-                if (!children.ContainsKey(childFileFull))
+                string childFileFull = VPath.DirectorySeparator + dirPrefix + remainder;
+                if (children.ContainsKey(childFileFull) == false)
                 {
                     children[childFileFull] = GetInfo(new VPath(childFileFull));
                 }
@@ -115,13 +117,29 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
         return children.Values;
     }
 
+    static string GetDirectoryPrefix(VPath path)
+    {
+        string dirPrefix = path.FullPath.TrimStart('/');
+
+        if (dirPrefix.Length > 0 && dirPrefix.EndsWith('/') == false)
+        {
+            dirPrefix += '/';
+        }
+
+        return dirPrefix;
+    }
+
     public void CreateFile(VPath path, long size = 0)
     {
         if (zipMode == ZipArchiveMode.Read)
+        {
             throw new NotSupportedException(NotSupportedExceptionMessage);
+        }
 
         if (Exists(path))
+        {
             throw new IOException($"File already exists: {path}");
+        }
 
         ZipArchiveEntry entry = archive.CreateEntry(path.FullPath);
 
@@ -149,13 +167,17 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
     public void DeleteFile(VPath path)
     {
         if (zipMode == ZipArchiveMode.Read)
+        {
             throw new NotSupportedException(NotSupportedExceptionMessage);
-
+        }
 
         if (Exists(path) == false)
+        {
             throw new FileNotFoundException($"File does not exists: {path}");
+        }
 
-        ZipArchiveEntry entry = archive.Entries.FirstOrDefault(e => e.FullName.Equals(path.FullPath, StringComparison.OrdinalIgnoreCase));
+        ZipArchiveEntry entry = archive.Entries
+            .FirstOrDefault(e => e.FullName.Equals(path.FullPath[1..], StringComparison.OrdinalIgnoreCase));
         entry?.Delete();
 
         if (AutoCommit) Commit();
@@ -167,10 +189,14 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
     public void MoveFile(VPath sourcePath, VPath destinationPath, bool overwrite)
     {
         if (zipMode == ZipArchiveMode.Read)
+        {
             throw new NotSupportedException(NotSupportedExceptionMessage);
+        }
 
         if (Exists(sourcePath) == false)
+        {
             throw new IOException($"File does not exists: {sourcePath}");
+        }
 
         if (Exists(destinationPath))
         {
@@ -447,7 +473,8 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
         }
 
         // Get all entries that start with the source path
-        List<ZipArchiveEntry> entriesToCopy = [.. archive.Entries.Where(e => e.FullName.StartsWith(sourcePath.FullPath, StringComparison.OrdinalIgnoreCase))];
+        List<ZipArchiveEntry> entriesToCopy = [..
+            archive.Entries.Where(e => e.FullName.StartsWith(sourcePath.FullPath, StringComparison.OrdinalIgnoreCase))];
 
         // Create new entries at destination and copy content
         foreach (ZipArchiveEntry sourceEntry in entriesToCopy)
@@ -480,11 +507,7 @@ public class ZipArchiveFileSystemBackend : IFileSystemBackend, ICommit
 
     ZipArchiveEntry GetEntry(VPath path)
     {
-        foreach (ZipArchiveEntry entry in archive.Entries)
-        {
-            if (entry.FullName == path) return entry;
-        }
-
-        return null;
+        string target = path.FullPath.TrimStart('/'); // external "/x" to internal "x"
+        return archive.Entries.FirstOrDefault(e => string.Equals(e.FullName.TrimStart('/'), target, StringComparison.OrdinalIgnoreCase));
     }
 }

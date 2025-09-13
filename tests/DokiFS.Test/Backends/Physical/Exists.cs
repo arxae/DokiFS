@@ -4,18 +4,20 @@ namespace DokiFS.Tests.Backends.Physical;
 
 public class PhysicalFileSystemBackendExistsTests : IDisposable
 {
-    readonly PhysicalBackendTestUtilities util;
+    readonly IoTestUtilities util;
 
     public PhysicalFileSystemBackendExistsTests()
     {
-        util = new("Exists");
+        util = new(nameof(PhysicalFileSystemBackendExistsTests));
     }
 
     public void Dispose()
     {
-        util.Dispose();
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
+
+    protected virtual void Dispose(bool disposing) => util.Dispose();
 
     [Fact(DisplayName = "Exists: Basic check")]
     public void ExistsBasicCheck()

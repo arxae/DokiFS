@@ -4,7 +4,7 @@ namespace DokiFS.Tests.Backends.Physical;
 
 public class PhysicalFileSystemBackendOpenWriteTests : IDisposable
 {
-    readonly PhysicalBackendTestUtilities util;
+    readonly IoTestUtilities util;
 
     public PhysicalFileSystemBackendOpenWriteTests()
     {
@@ -13,9 +13,11 @@ public class PhysicalFileSystemBackendOpenWriteTests : IDisposable
 
     public void Dispose()
     {
-        util.Dispose();
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
+
+    protected virtual void Dispose(bool disposing) => util.Dispose();
 
     [Fact(DisplayName = "OpenWrite: Opens valid filestream")]
     public void ShouldOpenValidFileStrean()

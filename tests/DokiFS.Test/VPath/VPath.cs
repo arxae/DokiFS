@@ -31,7 +31,7 @@ public class VPathTests
     {
         VPath path4 = new("test/path/");
 
-        Assert.Equal("test/path", path4.ToString());
+        Assert.Equal("test/path/", path4.ToString());
         Assert.False(path4.IsAbsolute);
     }
 

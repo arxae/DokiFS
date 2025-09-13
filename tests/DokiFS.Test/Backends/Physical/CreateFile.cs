@@ -5,18 +5,20 @@ namespace DokiFS.Tests.Backends.Physical;
 
 public class PhysicalFileSystemBackendCreateFileTests : IDisposable
 {
-    readonly PhysicalBackendTestUtilities util;
+    readonly IoTestUtilities util;
 
     public PhysicalFileSystemBackendCreateFileTests()
     {
-        util = new("CreateFile");
+        util = new(nameof(PhysicalFileSystemBackendCreateFileTests));
     }
 
     public void Dispose()
     {
-        util.Dispose();
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
+
+    protected virtual void Dispose(bool disposing) => util.Dispose();
 
     [Fact(DisplayName = "CreateFile: Basic Create File")]
     public void ShouldCreateNewFileWithZeroSize()

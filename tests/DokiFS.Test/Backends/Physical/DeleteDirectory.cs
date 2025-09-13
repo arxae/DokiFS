@@ -4,7 +4,7 @@ namespace DokiFS.Tests.Backends.Physical;
 
 public class PhysicalFileSystemBackendDeleteDirectoryTests : IDisposable
 {
-    readonly PhysicalBackendTestUtilities util;
+    readonly IoTestUtilities util;
 
     public PhysicalFileSystemBackendDeleteDirectoryTests()
     {
@@ -13,9 +13,11 @@ public class PhysicalFileSystemBackendDeleteDirectoryTests : IDisposable
 
     public void Dispose()
     {
-        util.Dispose();
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
+
+    protected virtual void Dispose(bool disposing) => util.Dispose();
 
     [Fact(DisplayName = "DeleteDirectory: Deletes directory")]
     public void ShouldDeleteDirectory()

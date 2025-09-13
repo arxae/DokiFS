@@ -1,15 +1,15 @@
 using System.Diagnostics;
 
-namespace DokiFS.Tests.Backends.Physical;
+namespace DokiFS.Tests;
 
 /// <summary>
 /// Manages temporary folder for testing content
 /// </summary>
-public class PhysicalBackendTestUtilities : IDisposable
+public class IoTestUtilities : IDisposable
 {
     public string BackendRoot { get; private set; }
 
-    public PhysicalBackendTestUtilities(string testName)
+    public IoTestUtilities(string testName)
     {
         testName = testName
             .Replace("PhysicalFileSystemBackendOpenReadTests", string.Empty)
@@ -92,11 +92,15 @@ public class PhysicalBackendTestUtilities : IDisposable
 
     public void Dispose()
     {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
         if (Directory.Exists(BackendRoot))
         {
             Directory.Delete(BackendRoot, true);
         }
-
-        GC.SuppressFinalize(this);
     }
 }

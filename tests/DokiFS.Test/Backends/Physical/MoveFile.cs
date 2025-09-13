@@ -4,18 +4,20 @@ namespace DokiFS.Tests.Backends.Physical;
 
 public class PhysicalFileSystemBackendMoveFileTests : IDisposable
 {
-    readonly List<PhysicalBackendTestUtilities> utils = [];
+    readonly List<IoTestUtilities> utils = [];
 
     public void Dispose()
     {
-        utils.ForEach(u => u.Dispose());
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
+
+    protected virtual void Dispose(bool disposing) => utils.ForEach(u => u.Dispose());
 
     [Fact(DisplayName = "MoveFile: Basic Move File")]
     public void ShouldMoveFile()
     {
-        PhysicalBackendTestUtilities util = new(nameof(ShouldMoveFile));
+        IoTestUtilities util = new(nameof(ShouldMoveFile));
         utils.Add(util);
 
         PhysicalFileSystemBackend backend = new(util.BackendRoot);
@@ -39,7 +41,7 @@ public class PhysicalFileSystemBackendMoveFileTests : IDisposable
     [Fact(DisplayName = "MoveFile: Source does not exist")]
     public void MoveFileSourceNotExist()
     {
-        PhysicalBackendTestUtilities util = new(nameof(MoveFileSourceNotExist));
+        IoTestUtilities util = new(nameof(MoveFileSourceNotExist));
         utils.Add(util);
 
         PhysicalFileSystemBackend backend = new(util.BackendRoot);
@@ -58,7 +60,7 @@ public class PhysicalFileSystemBackendMoveFileTests : IDisposable
     [Fact(DisplayName = "MoveFile: Source exists and is directory")]
     public void MoveFileSourceIsDirectory()
     {
-        PhysicalBackendTestUtilities util = new(nameof(MoveFileSourceIsDirectory));
+        IoTestUtilities util = new(nameof(MoveFileSourceIsDirectory));
         utils.Add(util);
 
         PhysicalFileSystemBackend backend = new(util.BackendRoot);
@@ -79,7 +81,7 @@ public class PhysicalFileSystemBackendMoveFileTests : IDisposable
     [Fact(DisplayName = "MoveFile: Destination exists and is directory")]
     public void MoveFileDestinationIsDirectory()
     {
-        PhysicalBackendTestUtilities util = new(nameof(MoveFileDestinationIsDirectory));
+        IoTestUtilities util = new(nameof(MoveFileDestinationIsDirectory));
         utils.Add(util);
 
         PhysicalFileSystemBackend backend = new(util.BackendRoot);

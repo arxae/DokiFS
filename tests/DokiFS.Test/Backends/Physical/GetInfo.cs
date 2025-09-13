@@ -5,18 +5,20 @@ namespace DokiFS.Tests.Backends.Physical;
 
 public class PhysicalFileSystemBackendGetInfoTests : IDisposable
 {
-    readonly PhysicalBackendTestUtilities util;
+    readonly IoTestUtilities util;
 
     public PhysicalFileSystemBackendGetInfoTests()
     {
-        util = new("GetInfo");
+        util = new(nameof(PhysicalFileSystemBackendGetInfoTests));
     }
 
     public void Dispose()
     {
-        util.Dispose();
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
+
+    protected virtual void Dispose(bool disposing) => util.Dispose();
 
     [Fact(DisplayName = "GetInfo: Basic get info for existing file")]
     public void GetInfoBasicGetInfoForExistingFile()
@@ -40,7 +42,7 @@ public class PhysicalFileSystemBackendGetInfoTests : IDisposable
         Assert.Equal(typeof(PhysicalFileSystemBackend), fileInfo.FromBackend);
     }
 
-    [Fact(DisplayName = "GetInfo: Get info for non-existent file returns null")]
+    [Fact(DisplayName = "GetInfo: Basic get info for existing directory")]
     public void GetInfoNonExistentFileReturnsNull()
     {
         PhysicalFileSystemBackend backend = new(util.BackendRoot);
